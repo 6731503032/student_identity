@@ -18,9 +18,6 @@ const studentsDb = require('../lib/students');
  * TODO (Step 5): idempotency-key handling on POST /service-clients
  */
 
-
-
-
 // GET /me — requires a valid token; returns the caller's own profile
 router.get('/me', authenticate, async (req, res) => {
   try {
@@ -56,6 +53,18 @@ router.patch('/me', authenticate, async (req, res) => {
   res.status(200).json(response);
 });
 
+// POST /students — staff only; creates a new student record
+router.post('/students', authenticate, requireRole('staff'), async (req, res) => {
+  try {
+    const student = await studentsDb.createStudent(req.body);
+    audit.record({ actor: req.user.sub, action: 'create_student', resource: '/students', result: 'allow' });
+    res.status(201).json(student);
+  } catch (err) {
+    audit.record({ actor: req.user.sub, action: 'create_student', resource: '/students', result: `deny:${err.message}` });
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // GET /students/:id — self can always read; staff/instructor can read anyone
 router.get('/students/:id', authenticate, async (req, res) => {
   const isSelf = req.user.sub === req.params.id;
@@ -69,6 +78,18 @@ router.get('/students/:id', authenticate, async (req, res) => {
     audit.record({ actor: req.user.sub, action: 'read_student', resource: `/students/${req.params.id}`, result: 'allow' });
     res.status(200).json(student);
   } catch (err) {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
+// DELETE /students/:id — staff only; deletes a student record
+router.delete('/students/:id', authenticate, requireRole('staff'), async (req, res) => {
+  try {
+    await studentsDb.deleteStudent(req.params.id);
+    audit.record({ actor: req.user.sub, action: 'delete_student', resource: `/students/${req.params.id}`, result: 'allow' });
+    res.status(204).send();
+  } catch (err) {
+    audit.record({ actor: req.user.sub, action: 'delete_student', resource: `/students/${req.params.id}`, result: 'deny:not_found' });
     res.status(404).json({ error: 'Not found' });
   }
 });
