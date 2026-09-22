@@ -4,6 +4,10 @@ const identityRoutes = require('./routes/identity');
 const app = express();
 app.use(express.json());
 
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'Student Identity API is running' });
+});
+
 app.use('/', identityRoutes);
 
 // Dev-only token-issuing helper — never mount this in production
