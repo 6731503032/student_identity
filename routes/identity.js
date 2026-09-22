@@ -7,39 +7,37 @@ const { verifyToken } = require('../lib/tokens');
 const { sendProfileUpdated } = require('../lib/webhooks');
 const serviceClients = require('../lib/serviceClients');
 const { getAISuggestion, deterministicChecklist } = require('../lib/completeness');
+const studentsDb = require('../lib/students');
 
 /**
- * STEP 2 — real auth, role checks, and consent are now wired in.
- * Still no database: students live in the in-memory object below.
- * TODO (Step 3): connect /students/:id/claims to real callers (Flow 1 / Flow 6)
- * TODO (Step 4): fire profile.updated webhook from PATCH /me
+ * STEP 3 — real auth, role checks, consent, and now real persistence via
+ * Supabase (lib/students.js) are wired in. The old in-memory stub is gone.
+ * Students are looked up by `student_id` (matches JWT `sub`), not the
+ * table's internal UUID `id` column.
+ * TODO (Step 3 cont.): connect /students/:id/claims to real callers (Flow 1 / Flow 6)
  * TODO (Step 5): idempotency-key handling on POST /service-clients
  */
 
-// In-memory student store (stub) — TODO (persistence): swap for real DB
-const students = {
-  '123': {
-    id: '123',
-    name: 'Stub Student',
-    email: 'stub.student@example.edu',
-    role: 'student',
-    profileComplete: false,
-  },
-};
-
 // GET /me — requires a valid token; returns the caller's own profile
-router.get('/me', authenticate, (req, res) => {
-  const student = students[req.user.sub];
-  if (!student) return res.status(404).json({ error: 'Not found' });
-  audit.record({ actor: req.user.sub, action: 'read_self', resource: '/me', result: 'allow' });
-  res.status(200).json(student);
+router.get('/me', authenticate, async (req, res) => {
+  try {
+    const student = await studentsDb.getStudent(req.user.sub);
+    audit.record({ actor: req.user.sub, action: 'read_self', resource: '/me', result: 'allow' });
+    res.status(200).json(student);
+  } catch (err) {
+    res.status(404).json({ error: 'Not found' });
+  }
 });
 
 // PATCH /me — requires a valid token; updates the caller's own profile
 router.patch('/me', authenticate, async (req, res) => {
-  const student = students[req.user.sub];
-  if (!student) return res.status(404).json({ error: 'Not found' });
-  Object.assign(student, req.body, { updatedAt: new Date().toISOString() });
+  let student;
+  try {
+    student = await studentsDb.updateStudent(req.user.sub, req.body);
+  } catch (err) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
   audit.record({ actor: req.user.sub, action: 'update_self', resource: '/me', result: 'allow' });
 
   // Fire the `profile.updated` webhook (private fields excluded) to
@@ -56,17 +54,20 @@ router.patch('/me', authenticate, async (req, res) => {
 });
 
 // GET /students/:id — self can always read; staff/instructor can read anyone
-router.get('/students/:id', authenticate, (req, res) => {
+router.get('/students/:id', authenticate, async (req, res) => {
   const isSelf = req.user.sub === req.params.id;
   const isStaff = ['staff', 'instructor'].includes(req.user.role);
   if (!isSelf && !isStaff) {
     audit.record({ actor: req.user.sub, action: 'read_student', resource: `/students/${req.params.id}`, result: 'deny' });
     return res.status(403).json({ error: 'Not permitted to read this profile' });
   }
-  const student = students[req.params.id];
-  if (!student) return res.status(404).json({ error: 'Not found' });
-  audit.record({ actor: req.user.sub, action: 'read_student', resource: `/students/${req.params.id}`, result: 'allow' });
-  res.status(200).json(student);
+  try {
+    const student = await studentsDb.getStudent(req.params.id);
+    audit.record({ actor: req.user.sub, action: 'read_student', resource: `/students/${req.params.id}`, result: 'allow' });
+    res.status(200).json(student);
+  } catch (err) {
+    res.status(404).json({ error: 'Not found' });
+  }
 });
 
 // GET /students/:id/claims — service clients only, gated by consent
@@ -132,8 +133,12 @@ router.delete('/sessions/:id', authenticate, (req, res) => {
 // Not in the PRD's REST list verbatim; implements the "AI and quality" section
 // (AI suggests a profile-completeness message; fallback is a deterministic checklist).
 router.get('/me/profile-completeness', authenticate, async (req, res) => {
-  const student = students[req.user.sub];
-  if (!student) return res.status(404).json({ error: 'Not found' });
+  let student;
+  try {
+    student = await studentsDb.getStudent(req.user.sub);
+  } catch (err) {
+    return res.status(404).json({ error: 'Not found' });
+  }
 
   try {
     const message = await getAISuggestion(student);
