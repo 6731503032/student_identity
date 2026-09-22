@@ -18,6 +18,9 @@ const studentsDb = require('../lib/students');
  * TODO (Step 5): idempotency-key handling on POST /service-clients
  */
 
+
+
+
 // GET /me — requires a valid token; returns the caller's own profile
 router.get('/me', authenticate, async (req, res) => {
   try {
@@ -67,6 +70,17 @@ router.get('/students/:id', authenticate, async (req, res) => {
     res.status(200).json(student);
   } catch (err) {
     res.status(404).json({ error: 'Not found' });
+  }
+});
+
+// GET /students — staff/instructor only; lists all student profiles
+router.get('/students', authenticate, requireRole('staff', 'instructor'), async (req, res) => {
+  try {
+    const students = await studentsDb.listStudents();
+    audit.record({ actor: req.user.sub, action: 'list_students', resource: '/students', result: 'allow' });
+    res.status(200).json(students);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list students' });
   }
 });
 
