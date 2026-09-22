@@ -25,8 +25,8 @@ router.post('/dev/issue-token', (req, res) => {
 
 // DEV-ONLY — stands in for "query the DB" when gathering Idempotency Proof
 // evidence, since there's no real database wired up yet.
-router.get('/dev/service-clients', (req, res) => {
-  const records = serviceClients.list();
+router.get('/dev/service-clients', async (req, res) => {
+  const records = await serviceClients.list();
   res.status(200).json({ count: records.length, records });
 });
 

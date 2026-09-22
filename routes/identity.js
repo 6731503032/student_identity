@@ -10,11 +10,12 @@ const { getAISuggestion, deterministicChecklist } = require('../lib/completeness
 const studentsDb = require('../lib/students');
 
 /**
- * STEP 3 — real auth, role checks, consent, and real persistence via
+ * STEP 3 — real auth, role checks, consent, and now real persistence via
  * Supabase (lib/students.js) are wired in. The old in-memory stub is gone.
  * Students are looked up by `student_id` (matches JWT `sub`), not the
  * table's internal UUID `id` column.
  * TODO (Step 3 cont.): connect /students/:id/claims to real callers (Flow 1 / Flow 6)
+ * TODO (Step 5): idempotency-key handling on POST /service-clients
  */
 
 // GET /me — requires a valid token; returns the caller's own profile
@@ -106,8 +107,8 @@ router.get('/students', authenticate, requireRole('staff', 'instructor'), async 
 
 // GET /students/:id/claims — service clients only, gated by consent
 // This is the endpoint Provider Proof evidence (Flow 1 + Flow 6) is captured against.
-router.get('/students/:id/claims', authenticate, requireScope('profile:read'), (req, res) => {
-  const granted = consent.hasConsent(req.params.id, req.user.sub, 'profile:read');
+router.get('/students/:id/claims', authenticate, requireScope('profile:read'), async (req, res) => {
+  const granted = await consent.hasConsent(req.params.id, req.user.sub, 'profile:read');
   if (!granted) {
     audit.record({
       actor: req.user.sub,
@@ -144,21 +145,17 @@ router.post('/tokens/verify', (req, res) => {
 // POST /service-clients — staff only, idempotent via the Idempotency-Key header
 router.post('/service-clients', authenticate, requireRole('staff'), async (req, res) => {
   const idempotencyKey = req.headers['idempotency-key'];
-  try {
-    const { record, replayed } = await serviceClients.create({
-      name: req.body && req.body.name,
-      idempotencyKey,
-    });
-    audit.record({
-      actor: req.user.sub,
-      action: 'create_service_client',
-      resource: '/service-clients',
-      result: replayed ? 'allow:idempotent_replay' : 'allow:created',
-    });
-    res.status(replayed ? 200 : 201).json(record);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to create service client', detail: err.message });
-  }
+  const { record, replayed } = await serviceClients.create({
+    name: req.body && req.body.name,
+    idempotencyKey,
+  });
+  audit.record({
+    actor: req.user.sub,
+    action: 'create_service_client',
+    resource: '/service-clients',
+    result: replayed ? 'allow:idempotent_replay' : 'allow:created',
+  });
+  res.status(201).json(record);
 });
 
 // DELETE /sessions/:id — requires a valid token
@@ -204,4 +201,3 @@ router.get('/me/profile-completeness', authenticate, async (req, res) => {
 });
 
 module.exports = router;
-//
