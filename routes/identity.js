@@ -10,12 +10,11 @@ const { getAISuggestion, deterministicChecklist } = require('../lib/completeness
 const studentsDb = require('../lib/students');
 
 /**
- * STEP 3 — real auth, role checks, consent, and now real persistence via
+ * STEP 3 — real auth, role checks, consent, and real persistence via
  * Supabase (lib/students.js) are wired in. The old in-memory stub is gone.
  * Students are looked up by `student_id` (matches JWT `sub`), not the
  * table's internal UUID `id` column.
  * TODO (Step 3 cont.): connect /students/:id/claims to real callers (Flow 1 / Flow 6)
- * TODO (Step 5): idempotency-key handling on POST /service-clients
  */
 
 // GET /me — requires a valid token; returns the caller's own profile
@@ -143,19 +142,23 @@ router.post('/tokens/verify', (req, res) => {
 });
 
 // POST /service-clients — staff only, idempotent via the Idempotency-Key header
-router.post('/service-clients', authenticate, requireRole('staff'), (req, res) => {
+router.post('/service-clients', authenticate, requireRole('staff'), async (req, res) => {
   const idempotencyKey = req.headers['idempotency-key'];
-  const { record, replayed } = serviceClients.create({
-    name: req.body && req.body.name,
-    idempotencyKey,
-  });
-  audit.record({
-    actor: req.user.sub,
-    action: 'create_service_client',
-    resource: '/service-clients',
-    result: replayed ? 'allow:idempotent_replay' : 'allow:created',
-  });
-  res.status(201).json(record);
+  try {
+    const { record, replayed } = await serviceClients.create({
+      name: req.body && req.body.name,
+      idempotencyKey,
+    });
+    audit.record({
+      actor: req.user.sub,
+      action: 'create_service_client',
+      resource: '/service-clients',
+      result: replayed ? 'allow:idempotent_replay' : 'allow:created',
+    });
+    res.status(replayed ? 200 : 201).json(record);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create service client', detail: err.message });
+  }
 });
 
 // DELETE /sessions/:id — requires a valid token
