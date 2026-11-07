@@ -9,6 +9,7 @@ const serviceClients = require('../lib/serviceClients');
 const { getAISuggestion, deterministicChecklist } = require('../lib/completeness');
 const studentsDb = require('../lib/students');
 const roles = require('../lib/roles');
+const { validateProfileUpdate } = require('../lib/profileValidation');
 
 /**
  * STEP 3 — real auth, role checks, consent, and now real persistence via
@@ -32,9 +33,14 @@ router.get('/me', authenticate, async (req, res) => {
 
 // PATCH /me — requires a valid token; updates the caller's own profile
 router.patch('/me', authenticate, async (req, res) => {
+  const { errors, updates } = validateProfileUpdate(req.body);
+  if (Object.keys(errors).length) {
+    audit.record({ actor: req.user.sub, action: 'update_self', resource: '/me', result: 'deny:validation' });
+    return res.status(400).json({ error: errors._ || 'Please fix the highlighted fields', fields: errors });
+  }
   let student;
   try {
-    student = await studentsDb.updateStudent(req.user.sub, req.body);
+    student = await studentsDb.updateStudent(req.user.sub, updates);
   } catch (err) {
     return res.status(404).json({ error: 'Not found' });
   }

@@ -20,9 +20,12 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Not Found', path: req.originalUrl });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Student Identity service (Step 1 stub) listening on port ${PORT}`);
-});
+// Only listen when run directly (npm start); tests import `app` without a port.
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Student Identity service listening on port ${PORT}`);
+  });
+}
 
 module.exports = app;

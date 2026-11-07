@@ -249,3 +249,25 @@ See **[CONTRACT.md](CONTRACT.md)** — tokens, roles, endpoints, errors and the
 `examples/course-catalog-auth.js` is copy-paste Express middleware other teams
 use to require a role (e.g. staff-only course edits). CORS is enabled
 (`ALLOWED_ORIGINS`, default `*`).
+
+## Automated tests (added)
+
+```bash
+npm test
+```
+Runs `test/identity.test.js` with Node's built-in test runner — no extra
+packages, no Supabase or internet needed (`test/helpers.js` swaps the database
+for an in-memory fake and boots the real Express app on a random port).
+
+| # | PRD test | What it proves |
+|---|---|---|
+| 1 | sign-in | Sign-up returns a working token; password is hashed; wrong password → 401; duplicate sign-up → 409 |
+| 2 | role check | Student can't create students (403), staff can (201); instructor reads but can't delete; a role assigned by staff appears in the next sign-in token |
+| 3 | consent grant/revoke | Claims 403 → grant → 200 → revoke → 403; unknown scope → 400 |
+| 4 | token expiry | Expired, tampered and missing tokens → 401; `/tokens/verify` → `valid: false` |
+| 5 | profile validation | `PATCH /me` rejects `student_id`, bad email, age 500, blank name, empty body (400); valid edit → 200 |
+| 6 | service scope | Service without `profile:read` → 403 even with consent; consent for one service doesn't cover another |
+| 7 | audit event | Denied and allowed claims, consent grant and failed login all write audit events with actor/resource/result |
+
+`PATCH /me` now only accepts `first_name`, `last_name`, `email`, `age`
+(`lib/profileValidation.js`).

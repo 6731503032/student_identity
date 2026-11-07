@@ -199,7 +199,13 @@ async function viewProfile(el) {
       const btn = f.querySelector('button'); btn.disabled = true;
       const u = await api('PATCH', '/me', body);
       btn.disabled = false;
-      if (!u.ok) return ($('#meErr').textContent = errMsg(u));
+      if (!u.ok) {
+        const f = u.data?.fields || {};
+        const labels = Object.fromEntries(EDITABLE.map(([k, l]) => [k, l]));
+        return ($('#meErr').textContent = Object.keys(f).length
+          ? Object.entries(f).map(([k, m]) => `${labels[k] || k}: ${m}`).join(' · ')
+          : errMsg(u));
+      }
       const { _webhookDebug, ...student } = u.data;
       toast('Profile saved');
       renderForm(student);
