@@ -2,6 +2,7 @@ const express = require('express');
 const identityRoutes = require('./routes/identity');
 
 const app = express();
+app.use(express.json());
 app.use(express.static(require('path').join(__dirname, 'public'))); // frontend
 
 app.use('/', identityRoutes);
