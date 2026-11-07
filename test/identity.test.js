@@ -164,13 +164,19 @@ describe('7. audit event', () => {
 });
 
 describe('8. service API key (extra)', () => {
-  test('staff issues a key once; the key reads claims only with consent; bad key is 401', async () => {
+  test('staff issues a key and can copy it again; the key reads claims only with consent; bad key is 401', async () => {
     const created = await api('POST', '/service-clients', { token: token('staff-1', 'staff'), body: { name: 'job-board' } });
     assert.equal(created.status, 201);
     const key = created.body.apiKey;
     assert.match(key, /^sik_/);
-    assert.ok(!JSON.stringify(tables.service_clients).includes(key), 'only a hash is stored');
-    assert.equal((await api('GET', '/dev/service-clients')).body.records.some((r) => 'api_key_hash' in r), false);
+    assert.ok(!JSON.stringify(tables.service_clients).includes(key), 'key is never stored in plain text');
+    const listed = (await api('GET', '/dev/service-clients')).body.records;
+    assert.equal(listed.some((r) => 'api_key_hash' in r || 'api_key_enc' in r), false, 'hash/ciphertext never leave the server');
+
+    const copy = await api('GET', `/service-clients/${created.body.id}/key`, { token: token('staff-1', 'staff') });
+    assert.equal(copy.status, 200);
+    assert.equal(copy.body.apiKey, key, 'staff can copy the same key again later');
+    assert.equal((await api('GET', `/service-clients/${created.body.id}/key`, { token: token(STUDENT, 'student') })).status, 403);
 
     const claims = () => api('GET', `/students/${STUDENT}/claims`, { headers: { 'X-API-Key': key } });
     assert.equal((await claims()).status, 403, 'no consent yet');

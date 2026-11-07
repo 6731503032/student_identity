@@ -185,6 +185,21 @@ router.post('/service-clients', authenticate, requireRole('staff'), async (req, 
   res.status(201).json(apiKey ? { ...record, apiKey } : record);
 });
 
+// GET /service-clients/:id/key — staff only; read the current API key to copy it again
+router.get('/service-clients/:id/key', authenticate, requireRole('staff'), async (req, res) => {
+  try {
+    const apiKey = await serviceClients.revealKey(req.params.id);
+    if (apiKey === undefined) return res.status(404).json({ error: 'Service client not found' });
+    if (apiKey === null) {
+      return res.status(409).json({ error: 'This key was created before keys could be copied again. Issue a new key once.' });
+    }
+    audit.record({ actor: req.user.sub, action: 'copy_api_key', resource: `/service-clients/${req.params.id}`, result: 'allow' });
+    res.status(200).json({ apiKey });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to read key' });
+  }
+});
+
 // POST /service-clients/:id/keys — staff only; issue a new API key (old one stops working)
 router.post('/service-clients/:id/keys', authenticate, requireRole('staff'), async (req, res) => {
   try {

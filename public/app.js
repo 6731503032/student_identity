@@ -288,12 +288,12 @@ async function viewStudents(el) {
 }
 
 async function viewClients(el) {
-  el.innerHTML = `<h2>Service clients</h2><p class="sub">Other teams' backends that read student claims. Each client gets an API key, shown once — send it to that team privately. Re-sending the same Idempotency-Key returns the original record.</p>
+  el.innerHTML = `<h2>Service clients</h2><p class="sub">Other teams' backends that read student claims. Each client has one API key — copy it any time and send it to that team privately. Re-sending the same Idempotency-Key returns the original record.</p>
     <div class="card" style="margin-bottom:16px"><h3>Register client</h3>
       <form id="scForm"><div class="row">
         <label>Name (the team's service name)<input name="name" required placeholder="internship-service"></label>
         <label>Idempotency-Key<input name="key" placeholder="optional"></label>
-        <button class="btn" type="button" id="genKey">New key</button>
+        <button class="btn" type="button" id="genKey">Generate</button>
         <button class="btn primary" type="submit">Register</button></div></form>
       <div id="scOut"></div></div>
     <div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -302,7 +302,7 @@ async function viewClients(el) {
 
   const form = $('#scForm');
   const showKey = (name, apiKey) => {
-    $('#scOut').innerHTML = `<div class="keybox"><p style="margin:0 0 8px"><b>API key for ${esc(name)}</b> — copy it now; it won't be shown again.</p>
+    $('#scOut').innerHTML = `<div class="keybox"><p style="margin:0 0 8px"><b>API key for ${esc(name)}</b></p>
       <div class="row"><input class="mono" readonly value="${esc(apiKey)}" id="keyVal"><button class="btn" type="button" id="copyKey">Copy</button></div>
       <p class="sub" style="margin:8px 0 0">They send it as <code>X-API-Key: …</code> to <code>GET /students/{id}/claims</code>.</p></div>`;
     $('#copyKey').onclick = async () => { try { await navigator.clipboard.writeText(apiKey); toast('Copied'); } catch { $('#keyVal').select(); } };
@@ -316,7 +316,7 @@ async function viewClients(el) {
     $('#tbl').innerHTML = !r.data.records.length ? '<p class="empty">No service clients yet.</p>' : `<table>
       <thead><tr><th>Name</th><th>API key</th><th>Scopes</th><th>Created</th><th></th></tr></thead>
       <tbody>${r.data.records.map((c) => `<tr><td>${esc(c.name)}</td>
-        <td class="mono">${c.hasApiKey ? `${esc(c.key_prefix || 'sik_')}…` : '<span class="sub">none</span>'}</td>
+        <td class="mono">${c.hasApiKey ? `${esc(c.key_prefix || 'sik_')}… ${c.canCopy ? `<button class="btn sm" data-copy="${esc(c.id)}" data-name="${esc(c.name)}">Copy</button>` : '<span class="sub" title="Created before keys could be copied again — issue a new key once">(can\'t copy)</span>'}` : '<span class="sub">none</span>'}</td>
         <td class="mono">${esc((c.scopes || []).join(', ') || '—')}</td>
         <td>${c.created_at ? esc(new Date(c.created_at).toLocaleString()) : '—'}</td>
         <td class="actions"><button class="btn sm" data-rot="${esc(c.id)}" data-name="${esc(c.name)}">${c.hasApiKey ? 'New key' : 'Create key'}</button></td></tr>`).join('')}</tbody></table>`;
@@ -331,6 +331,13 @@ async function viewClients(el) {
     load();
   };
   $('#tbl').onclick = async (e) => {
+    if (e.target.dataset.copy) {
+      const r = await api('GET', `/service-clients/${encodeURIComponent(e.target.dataset.copy)}/key`);
+      if (!r.ok) return toast(errMsg(r));
+      try { await navigator.clipboard.writeText(r.data.apiKey); toast(`Copied key for ${e.target.dataset.name}`); }
+      catch { showKey(e.target.dataset.name, r.data.apiKey); }
+      return;
+    }
     const id = e.target.dataset.rot; if (!id) return;
     const name = e.target.dataset.name;
     if (e.target.textContent === 'New key' && !confirm(`Issue a new key for ${name}? Their current key stops working immediately.`)) return;

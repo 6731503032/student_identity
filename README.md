@@ -284,3 +284,8 @@ in the Supabase SQL editor.
   The key acts as a `service` caller named after the client with scope `profile:read`.
 - `GET /students/:id/claims` now returns real data: `verified`, `name`,
   `profileComplete`, `missingFields`, `skills`; `404` for unknown students.
+- Keys are also stored **encrypted** (AES-256-GCM, `api_key_enc`) so staff can
+  press **Copy** on Service clients any time. The encryption key is
+  `API_KEY_SECRET` (falls back to `JWT_SECRET`) — set it on Render and don't
+  change it, or existing keys can't be copied (they still work). Run
+  `supabase/migrations/20261107160000_service_client_key_enc.sql` once.
