@@ -20,19 +20,19 @@
       </div>
 
       <form id="signinForm" data-pane="signin" novalidate>
-        <label>Student ID<input name="studentId" inputmode="numeric" autocomplete="username" placeholder="6731503032" required></label>
+        <label>Student ID<input name="studentId" inputmode="numeric" autocomplete="username" required></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
         <button class="btn primary" type="submit">Sign in</button>
         <p class="err" data-err></p>
       </form>
 
       <form id="signupForm" data-pane="signup" novalidate hidden>
-        <label>Student ID<input name="studentId" inputmode="numeric" maxlength="10" autocomplete="username" placeholder="6731503032" required><small class="ferr" data-f="studentId"></small></label>
+        <label>Student ID<input name="studentId" inputmode="numeric" maxlength="10" autocomplete="username" required><small class="ferr" data-f="studentId"></small></label>
         <div class="row">
           <label>First name<input name="firstName" autocomplete="given-name" required><small class="ferr" data-f="firstName"></small></label>
           <label>Last name<input name="lastName" autocomplete="family-name" required><small class="ferr" data-f="lastName"></small></label>
         </div>
-        <label>Email<input name="email" type="email" autocomplete="email" placeholder="6731503032@lamduan.mfu.ac.th" required><small class="ferr" data-f="email"></small></label>
+        <label>Email<input name="email" type="email" autocomplete="email" required><small class="ferr" data-f="email"></small></label>
         <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required><small class="hintline" data-f="password">At least 8 characters</small></label>
         <label>Confirm password<input name="confirm" type="password" autocomplete="new-password" required><small class="ferr" data-f="confirm"></small></label>
         <button class="btn primary" type="submit">Create account</button>

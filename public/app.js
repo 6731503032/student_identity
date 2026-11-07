@@ -232,7 +232,7 @@ async function viewStudents(el) {
   el.innerHTML = `<h2>Students</h2><p class="sub">${staff ? 'Create, view and remove student records.' : 'Read-only list of student records.'}</p>
     ${staff ? `<div class="card" style="margin-bottom:16px"><h3>Add student</h3>
       <form id="addForm"><div class="row">
-        <label>Student ID<input name="studentId" required placeholder="6731503032"></label>
+        <label>Student ID<input name="studentId" required></label>
         <label>First name<input name="firstName" required></label>
         <label>Last name<input name="lastName" required></label>
         <label>Email<input name="email" type="email" required placeholder="id@lamduan.mfu.ac.th"></label>
@@ -421,7 +421,7 @@ async function viewRoles(el) {
   const staff = session.role === 'staff';
   el.innerHTML = `<h2>Role lookup</h2><p class="sub">Check what role a person has and what it lets them do.${staff ? ' Staff can assign roles.' : ''}</p>
     <div class="card" style="margin-bottom:16px">
-      <form id="lkForm"><div class="row"><label>Student ID or username<input name="s" required placeholder="6731503032"></label>
+      <form id="lkForm"><div class="row"><label>Student ID or username<input name="s" required></label>
         <button class="btn primary" type="submit">Look up</button></div></form>
       <div id="lkOut"></div></div>
     <div class="card"><div class="row" style="margin-bottom:12px">
