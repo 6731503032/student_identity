@@ -8,6 +8,7 @@ const { sendProfileUpdated } = require('../lib/webhooks');
 const serviceClients = require('../lib/serviceClients');
 const { getAISuggestion, deterministicChecklist } = require('../lib/completeness');
 const studentsDb = require('../lib/students');
+const roles = require('../lib/roles');
 
 /**
  * STEP 3 — real auth, role checks, consent, and now real persistence via
@@ -197,6 +198,130 @@ router.get('/me/profile-completeness', authenticate, async (req, res) => {
       note: 'AI suggestion unavailable; showing the deterministic checklist instead.',
       ...fallback,
     });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Consent & sharing preferences (screen 2). Not in the PRD's REST list verbatim;
+// added so students can grant/revoke the consent that /students/:id/claims checks.
+// ---------------------------------------------------------------------------
+
+// GET /me/consents — every known service with the scopes this student grants it
+router.get('/me/consents', authenticate, requireRole('student'), async (req, res) => {
+  try {
+    const [rows, clients] = await Promise.all([consent.listForStudent(req.user.sub), serviceClients.list()]);
+    const names = new Set([...clients.map((c) => c.name), ...rows.map((r) => r.grantee_id)]);
+    const services = [...names].sort().map((granteeId) => {
+      const row = rows.find((r) => r.grantee_id === granteeId);
+      return { granteeId, scopes: row ? row.scopes : [], updatedAt: row ? row.updated_at : null };
+    });
+    audit.record({ actor: req.user.sub, action: 'list_consents', resource: '/me/consents', result: 'allow' });
+    res.status(200).json({ availableScopes: consent.SCOPES, services });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load consents' });
+  }
+});
+
+// PUT /me/consents/:granteeId — set exactly these scopes; an empty list revokes
+router.put('/me/consents/:granteeId', authenticate, requireRole('student'), async (req, res) => {
+  const { granteeId } = req.params;
+  const scopes = req.body && req.body.scopes;
+  if (!Array.isArray(scopes) || scopes.some((s) => !consent.SCOPES.includes(s))) {
+    audit.record({ actor: req.user.sub, action: 'set_consent', resource: `/me/consents/${granteeId}`, result: 'deny:invalid_scopes' });
+    return res.status(400).json({ error: `scopes must be an array of: ${consent.SCOPES.join(', ')}` });
+  }
+  try {
+    const unique = [...new Set(scopes)];
+    if (unique.length) await consent.set(req.user.sub, granteeId, unique);
+    else await consent.revoke(req.user.sub, granteeId);
+    audit.record({
+      actor: req.user.sub, action: unique.length ? 'grant_consent' : 'revoke_consent',
+      resource: `/me/consents/${granteeId}`, result: `allow:${unique.join(',') || 'none'}`,
+    });
+    res.status(200).json({ granteeId, scopes: unique });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save consent' });
+  }
+});
+
+// DELETE /me/consents/:granteeId — revoke everything granted to one service
+router.delete('/me/consents/:granteeId', authenticate, requireRole('student'), async (req, res) => {
+  try {
+    await consent.revoke(req.user.sub, req.params.granteeId);
+    audit.record({ actor: req.user.sub, action: 'revoke_consent', resource: `/me/consents/${req.params.granteeId}`, result: 'allow' });
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to revoke consent' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Staff role lookup (screen 3). Role entity lives in the `roles` table;
+// students without a row default to role 'student'.
+// ---------------------------------------------------------------------------
+
+function displayName(s) {
+  return [s.first_name, s.last_name].filter(Boolean).join(' ') || null;
+}
+
+// GET /roles — staff/instructor; every subject with its effective role
+router.get('/roles', authenticate, requireRole('staff', 'instructor'), async (req, res) => {
+  try {
+    const [assigned, students] = await Promise.all([roles.list(), studentsDb.listStudents()]);
+    const bySubject = new Map(assigned.map((r) => [r.subject, {
+      subject: r.subject, role: r.role, source: 'assigned', name: null, updatedBy: r.updated_by, updatedAt: r.updated_at,
+    }]));
+    students.forEach((s) => {
+      const entry = bySubject.get(s.student_id);
+      if (entry) entry.name = displayName(s);
+      else bySubject.set(s.student_id, { subject: s.student_id, role: 'student', source: 'default', name: displayName(s) });
+    });
+    audit.record({ actor: req.user.sub, action: 'list_roles', resource: '/roles', result: 'allow' });
+    res.status(200).json({ availableRoles: roles.ROLES, subjects: [...bySubject.values()] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list roles' });
+  }
+});
+
+// GET /roles/:subject — staff/instructor; effective role for one subject
+router.get('/roles/:subject', authenticate, requireRole('staff', 'instructor'), async (req, res) => {
+  const { subject } = req.params;
+  try {
+    const row = await roles.get(subject);
+    let student = null;
+    try { student = await studentsDb.getStudent(subject); } catch (e) { /* not a student */ }
+    if (!row && !student) {
+      audit.record({ actor: req.user.sub, action: 'lookup_role', resource: `/roles/${subject}`, result: 'deny:not_found' });
+      return res.status(404).json({ error: 'No role or student record for this subject' });
+    }
+    audit.record({ actor: req.user.sub, action: 'lookup_role', resource: `/roles/${subject}`, result: 'allow' });
+    res.status(200).json({
+      subject,
+      role: row ? row.role : 'student',
+      source: row ? 'assigned' : 'default',
+      name: student ? displayName(student) : null,
+      updatedBy: row ? row.updated_by : null,
+      updatedAt: row ? row.updated_at : null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to look up role' });
+  }
+});
+
+// PUT /roles/:subject — staff only; assign a role
+router.put('/roles/:subject', authenticate, requireRole('staff'), async (req, res) => {
+  const { subject } = req.params;
+  const role = req.body && req.body.role;
+  if (!roles.ROLES.includes(role)) {
+    audit.record({ actor: req.user.sub, action: 'assign_role', resource: `/roles/${subject}`, result: 'deny:invalid_role' });
+    return res.status(400).json({ error: `role must be one of: ${roles.ROLES.join(', ')}` });
+  }
+  try {
+    const row = await roles.set(subject, role, req.user.sub);
+    audit.record({ actor: req.user.sub, action: 'assign_role', resource: `/roles/${subject}`, result: `allow:${role}` });
+    res.status(200).json({ subject: row.subject, role: row.role, source: 'assigned', updatedBy: row.updated_by, updatedAt: row.updated_at });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to assign role' });
   }
 });
 

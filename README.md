@@ -202,3 +202,25 @@ production deploy — grep for `TODO` across the project to see the full list
 (dev secrets, real persistence, real cross-team calls, replacing the mock
 webhook receivers, replacing the simulated AI call). Nothing left is blocking
 evidence collection for the A5 submission itself.
+
+## Consent & Role lookup screens (added)
+
+Completes the PRD's 3 screens: sign-in/profile, **consent and sharing
+preferences**, **staff role lookup**.
+
+**One-time setup:** run `supabase/migrations/20261107120000_create_roles.sql`
+in the Supabase SQL editor (creates the `roles` table for the Role entity).
+
+Endpoints added (not in the PRD's REST list verbatim; they back the two screens):
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| GET | `/me/consents` | student | Known services + scopes granted to each |
+| PUT | `/me/consents/:granteeId` | student | Set scopes `{ "scopes": ["profile:read"] }`; `[]` revokes. Unknown scope → 400 |
+| DELETE | `/me/consents/:granteeId` | student | Revoke all scopes for one service |
+| GET | `/roles` | staff, instructor | Every subject with effective role (students default to `student`) |
+| GET | `/roles/:subject` | staff, instructor | Effective role for one subject, 404 if unknown |
+| PUT | `/roles/:subject` | staff | Assign `{ "role": "student" \| "instructor" \| "staff" }`. Invalid → 400 |
+
+Every grant, revoke, lookup and assignment writes an audit event. Granting
+consent here is what makes `GET /students/:id/claims` return 200 for that service.

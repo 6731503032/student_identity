@@ -77,7 +77,9 @@ $('#clearLog').onclick = emptyLog;
 // ---------- routes ----------
 const ROUTES = {
   profile:  { label: 'My profile',      roles: ['student'],               render: viewProfile },
+  consent:  { label: 'Consent',         roles: ['student'],               render: viewConsent },
   students: { label: 'Students',        roles: ['staff', 'instructor'],   render: viewStudents },
+  roles:    { label: 'Roles',           roles: ['staff', 'instructor'],   render: viewRoles },
   clients:  { label: 'Service clients', roles: ['staff'],                 render: viewClients },
   claims:   { label: 'Claims',          roles: ['service'],               render: viewClaims },
   tools:    { label: 'Tools',           roles: ['student', 'staff', 'instructor', 'service'], render: viewTools },
@@ -293,6 +295,121 @@ function viewClaims(el) {
           <dt>Issued</dt><dd>${esc(new Date(r.data.issuedAt).toLocaleString())}</dd></dl>`
       : `<p style="margin-top:16px"><span class="badge bad">${r.status}</span> ${esc(errMsg(r))}</p>`;
   };
+}
+
+const SCOPE_INFO = { 'profile:read': 'Your verified status, skills and profile completeness (claims)' };
+
+async function viewConsent(el) {
+  el.innerHTML = `<h2>Consent &amp; sharing</h2><p class="sub">Choose which campus services may read your identity claims. A service without consent is denied, and every change is audited.</p>
+    <div id="cs">Loading…</div>`;
+  const r = await api('GET', '/me/consents');
+  if (!r.ok) return ($('#cs').innerHTML = `<p class="err">${esc(errMsg(r))}</p>`);
+  const { availableScopes, services } = r.data;
+  if (!services.length) return ($('#cs').innerHTML = '<div class="card"><p class="empty">No services are registered yet, so there is nothing to share.</p></div>');
+
+  $('#cs').innerHTML = `<div class="grid">${services.map((s, i) => `
+    <form class="card consent" data-i="${i}">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h3 class="mono" style="margin:0">${esc(s.granteeId)}</h3><span class="state"></span></div>
+      ${availableScopes.map((sc) => `<label class="check scope"><input type="checkbox" value="${esc(sc)}" ${s.scopes.includes(sc) ? 'checked' : ''}>
+        <span><code>${esc(sc)}</code><small>${esc(SCOPE_INFO[sc] || '')}</small></span></label>`).join('')}
+      <p class="sub upd" style="margin:0"></p>
+      <div class="row"><button class="btn primary" type="submit" disabled>Save</button><button class="btn danger" type="button" data-revoke>Revoke all</button></div>
+    </form>`).join('')}</div>`;
+
+  document.querySelectorAll('form.consent').forEach((f) => {
+    const s = services[f.dataset.i];
+    const picked = () => [...f.querySelectorAll('input:checked')].map((c) => c.value);
+    const paint = () => {
+      const on = s.scopes.length > 0;
+      f.querySelector('.state').innerHTML = on ? '<span class="badge ok">Sharing</span>' : '<span class="badge">Not sharing</span>';
+      f.querySelector('.upd').textContent = s.updatedAt ? `Updated ${new Date(s.updatedAt).toLocaleString()}` : '';
+      f.querySelector('[data-revoke]').disabled = !on;
+      f.querySelector('[type=submit]').disabled = picked().sort().join() === [...s.scopes].sort().join();
+    };
+    const save = async (scopes) => {
+      const u = await api('PUT', `/me/consents/${encodeURIComponent(s.granteeId)}`, { scopes });
+      if (!u.ok) return toast(errMsg(u));
+      s.scopes = u.data.scopes; s.updatedAt = new Date().toISOString();
+      f.querySelectorAll('input').forEach((c) => (c.checked = s.scopes.includes(c.value)));
+      toast(s.scopes.length ? `Sharing with ${s.granteeId}` : `Stopped sharing with ${s.granteeId}`);
+      paint();
+    };
+    f.onchange = paint;
+    f.onsubmit = (e) => { e.preventDefault(); save(picked()); };
+    f.querySelector('[data-revoke]').onclick = () => confirm(`Stop sharing everything with ${s.granteeId}?`) && save([]);
+    paint();
+  });
+}
+
+const ROLE_CAN = {
+  student: ['Read and update own profile (/me)', 'See profile completeness', 'Grant or revoke consent to services'],
+  instructor: ['List and view all student profiles', 'Look up roles'],
+  staff: ['Everything an instructor can', 'Create and delete students', 'Assign roles', 'Register service clients'],
+};
+const roleBadge = (r) => `<span class="badge ${r === 'staff' ? 'accent' : r === 'instructor' ? 'warn' : ''}">${esc(r)}</span>`;
+
+async function viewRoles(el) {
+  const staff = session.role === 'staff';
+  el.innerHTML = `<h2>Role lookup</h2><p class="sub">Check what role a person has and what it lets them do.${staff ? ' Staff can assign roles.' : ''}</p>
+    <div class="card" style="margin-bottom:16px">
+      <form id="lkForm"><div class="row"><label>Student ID or username<input name="s" required placeholder="6731503032"></label>
+        <button class="btn primary" type="submit">Look up</button></div></form>
+      <div id="lkOut"></div></div>
+    <div class="card"><div class="row" style="margin-bottom:12px">
+      <label>Search<input id="q" placeholder="ID or name"></label>
+      <label style="flex:0 0 160px">Role<select id="rf"><option value="">All roles</option><option>student</option><option>instructor</option><option>staff</option></select></label>
+      <button class="btn" id="reload">Refresh</button></div>
+      <div class="table-wrap" id="tbl">Loading…</div></div>`;
+
+  let rows = [], roleList = ['student', 'instructor', 'staff'];
+  const load = async () => {
+    const r = await api('GET', '/roles');
+    if (!r.ok) return ($('#tbl').innerHTML = `<p class="err">${esc(errMsg(r))}</p>`);
+    rows = r.data.subjects; roleList = r.data.availableRoles; draw();
+  };
+  const draw = () => {
+    const q = $('#q').value.trim().toLowerCase(), rf = $('#rf').value;
+    const list = rows.filter((s) => (!rf || s.role === rf) && (!q || `${s.subject} ${s.name || ''}`.toLowerCase().includes(q)));
+    $('#tbl').innerHTML = !list.length ? '<p class="empty">No one matches.</p>' : `<table>
+      <thead><tr><th>Subject</th><th>Name</th><th>Role</th><th>Source</th><th></th></tr></thead>
+      <tbody>${list.map((s) => `<tr><td class="mono">${esc(s.subject)}</td><td>${esc(s.name || '—')}</td><td>${roleBadge(s.role)}</td>
+        <td>${s.source === 'assigned' ? 'Assigned' : '<span class="sub">Default</span>'}</td>
+        <td class="actions"><button class="btn sm" data-lk="${esc(s.subject)}">${staff ? 'Manage' : 'View'}</button></td></tr>`).join('')}</tbody></table>`;
+  };
+  const lookup = async (subject) => {
+    $('#lkForm').s.value = subject;
+    const r = await api('GET', `/roles/${encodeURIComponent(subject)}`);
+    const out = $('#lkOut');
+    if (!r.ok) {
+      out.innerHTML = `<p style="margin-top:16px"><span class="badge bad">${r.status}</span> ${esc(errMsg(r))}</p>
+        ${staff && r.status === 404 ? '<p class="sub" style="margin:8px 0 0">You can still assign a role to this username below.</p>' + assignForm(subject, '') : ''}`;
+    } else {
+      const d = r.data;
+      out.innerHTML = `<div class="grid" style="margin-top:16px">
+        <dl class="kv"><dt>Subject</dt><dd class="mono">${esc(d.subject)}</dd><dt>Name</dt><dd>${esc(d.name || '—')}</dd>
+          <dt>Role</dt><dd>${roleBadge(d.role)} <span class="sub">${d.source === 'assigned' ? 'assigned' : 'default for students'}</span></dd>
+          ${d.updatedBy ? `<dt>Set by</dt><dd>${esc(d.updatedBy)} · ${esc(new Date(d.updatedAt).toLocaleString())}</dd>` : ''}</dl>
+        <div><b>Can</b><ul class="checklist">${(ROLE_CAN[d.role] || []).map((c) => `<li class="on">${esc(c)}</li>`).join('')}</ul></div></div>
+        ${staff ? assignForm(d.subject, d.role) : ''}`;
+    }
+    const af = $('#asForm');
+    if (af) af.onsubmit = async (e) => {
+      e.preventDefault();
+      const u = await api('PUT', `/roles/${encodeURIComponent(subject)}`, { role: af.role.value });
+      if (!u.ok) return toast(errMsg(u));
+      toast(`${subject} is now ${u.data.role}`); await load(); lookup(subject);
+    };
+    out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+  const assignForm = (subject, current) => `<form id="asForm" class="row" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
+    <label>Assign role to <span class="mono">${esc(subject)}</span><select name="role">${roleList.map((r) => `<option ${r === current ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
+    <button class="btn primary" type="submit">Save role</button></form>`;
+
+  $('#lkForm').onsubmit = (e) => { e.preventDefault(); lookup(e.target.s.value.trim()); };
+  $('#q').oninput = draw; $('#rf').onchange = draw; $('#reload').onclick = load;
+  $('#tbl').onclick = (e) => e.target.dataset.lk && lookup(e.target.dataset.lk);
+  load();
 }
 
 function viewTools(el) {
