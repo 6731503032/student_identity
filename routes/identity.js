@@ -125,15 +125,31 @@ router.get('/students/:id/claims', authenticate, requireScope('profile:read'), a
     });
     return res.status(403).json({ error: 'No consent granted for this scope' });
   }
+  let student;
+  try {
+    student = await studentsDb.getStudent(req.params.id);
+  } catch (err) {
+    audit.record({ actor: req.user.sub, action: 'read_claims', resource: `/students/${req.params.id}/claims`, result: 'deny:not_found' });
+    return res.status(404).json({ error: 'Student not found' });
+  }
   audit.record({
     actor: req.user.sub,
     action: 'read_claims',
     resource: `/students/${req.params.id}/claims`,
     result: 'allow',
   });
+  // Claims are derived from the student record. Private fields (email, age)
+  // are never included.
+  const { isComplete, missingFields } = deterministicChecklist(student);
   res.status(200).json({
-    studentId: req.params.id,
-    claims: { verified: true, skills: [], profileComplete: false },
+    studentId: student.student_id,
+    claims: {
+      verified: true, // a record exists in the authoritative identity store
+      name: { first: student.first_name, last: student.last_name },
+      profileComplete: isComplete,
+      missingFields,
+      skills: [], // no approved-skills data in Identity yet
+    },
     issuedAt: new Date().toISOString(),
   });
 });
@@ -155,7 +171,7 @@ router.post('/tokens/verify', (req, res) => {
 // POST /service-clients — staff only, idempotent via the Idempotency-Key header
 router.post('/service-clients', authenticate, requireRole('staff'), async (req, res) => {
   const idempotencyKey = req.headers['idempotency-key'];
-  const { record, replayed } = await serviceClients.create({
+  const { record, apiKey, replayed } = await serviceClients.create({
     name: req.body && req.body.name,
     idempotencyKey,
   });
@@ -165,7 +181,19 @@ router.post('/service-clients', authenticate, requireRole('staff'), async (req, 
     resource: '/service-clients',
     result: replayed ? 'allow:idempotent_replay' : 'allow:created',
   });
-  res.status(201).json(record);
+  // apiKey is only present on first creation; it is never stored or shown again.
+  res.status(201).json(apiKey ? { ...record, apiKey } : record);
+});
+
+// POST /service-clients/:id/keys — staff only; issue a new API key (old one stops working)
+router.post('/service-clients/:id/keys', authenticate, requireRole('staff'), async (req, res) => {
+  try {
+    const { record, apiKey } = await serviceClients.rotateKey(req.params.id);
+    audit.record({ actor: req.user.sub, action: 'rotate_api_key', resource: `/service-clients/${req.params.id}`, result: 'allow' });
+    res.status(201).json({ ...record, apiKey });
+  } catch (err) {
+    res.status(404).json({ error: 'Service client not found' });
+  }
 });
 
 // DELETE /sessions/:id — requires a valid token

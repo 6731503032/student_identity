@@ -288,10 +288,10 @@ async function viewStudents(el) {
 }
 
 async function viewClients(el) {
-  el.innerHTML = `<h2>Service clients</h2><p class="sub">Register services that can request student claims. Re-sending the same Idempotency-Key returns the original record.</p>
+  el.innerHTML = `<h2>Service clients</h2><p class="sub">Other teams' backends that read student claims. Each client gets an API key, shown once — send it to that team privately. Re-sending the same Idempotency-Key returns the original record.</p>
     <div class="card" style="margin-bottom:16px"><h3>Register client</h3>
       <form id="scForm"><div class="row">
-        <label>Name<input name="name" required placeholder="internship-service"></label>
+        <label>Name (the team's service name)<input name="name" required placeholder="internship-service"></label>
         <label>Idempotency-Key<input name="key" placeholder="optional"></label>
         <button class="btn" type="button" id="genKey">New key</button>
         <button class="btn primary" type="submit">Register</button></div></form>
@@ -301,22 +301,42 @@ async function viewClients(el) {
       <div class="table-wrap" id="tbl">Loading…</div></div>`;
 
   const form = $('#scForm');
+  const showKey = (name, apiKey) => {
+    $('#scOut').innerHTML = `<div class="keybox"><p style="margin:0 0 8px"><b>API key for ${esc(name)}</b> — copy it now; it won't be shown again.</p>
+      <div class="row"><input class="mono" readonly value="${esc(apiKey)}" id="keyVal"><button class="btn" type="button" id="copyKey">Copy</button></div>
+      <p class="sub" style="margin:8px 0 0">They send it as <code>X-API-Key: …</code> to <code>GET /students/{id}/claims</code>.</p></div>`;
+    $('#copyKey').onclick = async () => { try { await navigator.clipboard.writeText(apiKey); toast('Copied'); } catch { $('#keyVal').select(); } };
+    $('#scOut').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
   $('#genKey').onclick = () => (form.key.value = `req-${crypto.randomUUID().slice(0, 8)}`);
   const load = async () => {
     const r = await api('GET', '/dev/service-clients');
     if (!r.ok) return ($('#tbl').innerHTML = `<p class="err">${esc(errMsg(r))}</p>`);
     $('#cnt').textContent = r.data.count;
     $('#tbl').innerHTML = !r.data.records.length ? '<p class="empty">No service clients yet.</p>' : `<table>
-      <thead><tr><th>Name</th><th>ID</th><th>Idempotency key</th><th>Created</th></tr></thead>
-      <tbody>${r.data.records.map((c) => `<tr><td>${esc(c.name)}</td><td class="mono">${esc(c.id)}</td>
-        <td class="mono">${esc(c.idempotency_key ?? '—')}</td><td>${c.created_at ? esc(new Date(c.created_at).toLocaleString()) : '—'}</td></tr>`).join('')}</tbody></table>`;
+      <thead><tr><th>Name</th><th>API key</th><th>Scopes</th><th>Created</th><th></th></tr></thead>
+      <tbody>${r.data.records.map((c) => `<tr><td>${esc(c.name)}</td>
+        <td class="mono">${c.hasApiKey ? `${esc(c.key_prefix || 'sik_')}…` : '<span class="sub">none</span>'}</td>
+        <td class="mono">${esc((c.scopes || []).join(', ') || '—')}</td>
+        <td>${c.created_at ? esc(new Date(c.created_at).toLocaleString()) : '—'}</td>
+        <td class="actions"><button class="btn sm" data-rot="${esc(c.id)}" data-name="${esc(c.name)}">${c.hasApiKey ? 'New key' : 'Create key'}</button></td></tr>`).join('')}</tbody></table>`;
   };
   form.onsubmit = async (e) => {
     e.preventDefault();
     const key = form.key.value.trim();
     const r = await api('POST', '/service-clients', { name: form.name.value.trim() }, key ? { 'Idempotency-Key': key } : {});
-    $('#scOut').innerHTML = r.ok ? `<pre class="out">${json(r.data)}</pre>` : `<p class="err">${esc(errMsg(r))}</p>`;
-    if (r.ok) load();
+    if (!r.ok) return ($('#scOut').innerHTML = `<p class="err">${esc(errMsg(r))}</p>`);
+    if (r.data.apiKey) showKey(r.data.name, r.data.apiKey);
+    else $('#scOut').innerHTML = `<p class="sub" style="margin-top:12px">Same Idempotency-Key — returned the existing client <b>${esc(r.data.name)}</b> (<span class="mono">${esc(r.data.id)}</span>). No new key was issued.</p>`;
+    load();
+  };
+  $('#tbl').onclick = async (e) => {
+    const id = e.target.dataset.rot; if (!id) return;
+    const name = e.target.dataset.name;
+    if (e.target.textContent === 'New key' && !confirm(`Issue a new key for ${name}? Their current key stops working immediately.`)) return;
+    const r = await api('POST', `/service-clients/${encodeURIComponent(id)}/keys`);
+    if (!r.ok) return toast(errMsg(r));
+    showKey(name, r.data.apiKey); load();
   };
   $('#reload').onclick = load;
   load();
@@ -336,8 +356,9 @@ function viewClaims(el) {
     const r = await api('GET', `/students/${encodeURIComponent(id)}/claims`);
     $('#clOut').innerHTML = r.ok
       ? `<p style="margin-top:16px"><span class="badge ok">Granted</span></p><dl class="kv">
+          <dt>Name</dt><dd>${esc([r.data.claims.name?.first, r.data.claims.name?.last].filter(Boolean).join(' ') || '—')}</dd>
           <dt>Verified</dt><dd>${r.data.claims.verified ? 'Yes' : 'No'}</dd>
-          <dt>Profile complete</dt><dd>${r.data.claims.profileComplete ? 'Yes' : 'No'}</dd>
+          <dt>Profile complete</dt><dd>${r.data.claims.profileComplete ? 'Yes' : `No — missing ${esc((r.data.claims.missingFields || []).join(', '))}`}</dd>
           <dt>Skills</dt><dd>${esc(r.data.claims.skills.join(', ') || '—')}</dd>
           <dt>Issued</dt><dd>${esc(new Date(r.data.issuedAt).toLocaleString())}</dd></dl>`
       : `<p style="margin-top:16px"><span class="badge bad">${r.status}</span> ${esc(errMsg(r))}</p>`;

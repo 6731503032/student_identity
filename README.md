@@ -271,3 +271,16 @@ for an in-memory fake and boots the real Express app on a random port).
 
 `PATCH /me` now only accepts `first_name`, `last_name`, `email`, `age`
 (`lib/profileValidation.js`).
+
+## Service API keys & real claims (added)
+
+**One-time setup:** run `supabase/migrations/20261107150000_service_client_api_keys.sql`
+in the Supabase SQL editor.
+
+- Staff register a team's service on **Service clients**; an API key (`sik_…`) is
+  shown **once**. Only its SHA-256 hash is stored. "New key" rotates it
+  (`POST /service-clients/:id/keys`); the old key stops working.
+- The other team's backend sends `X-API-Key: sik_…` (or `Authorization: Bearer sik_…`).
+  The key acts as a `service` caller named after the client with scope `profile:read`.
+- `GET /students/:id/claims` now returns real data: `verified`, `name`,
+  `profileComplete`, `missingFields`, `skills`; `404` for unknown students.

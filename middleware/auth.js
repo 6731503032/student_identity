@@ -1,9 +1,22 @@
 const { verifyToken } = require('../lib/tokens');
 const audit = require('../lib/audit');
 
-function authenticate(req, res, next) {
+// Accepts either a user/service JWT (`Authorization: Bearer <jwt>`) or a
+// service API key (`X-API-Key: sik_…`, or `Authorization: Bearer sik_…`).
+async function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
   const [scheme, token] = header.split(' ');
+  const apiKey = req.headers['x-api-key'] || (scheme === 'Bearer' && token && token.startsWith('sik_') ? token : null);
+  if (apiKey) {
+    let client = null;
+    try { client = await require('../lib/serviceClients').findByApiKey(apiKey); } catch (e) { /* treat as invalid */ }
+    if (!client) {
+      audit.record({ actor: 'unknown', action: 'authenticate', resource: req.originalUrl, result: 'deny:invalid_api_key' });
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+    req.user = { sub: client.name, role: 'service', scopes: client.scopes || [], via: 'api_key' };
+    return next();
+  }
   if (scheme !== 'Bearer' || !token) {
     audit.record({ actor: 'unknown', action: 'authenticate', resource: req.originalUrl, result: 'deny:missing_token' });
     return res.status(401).json({ error: 'Missing or malformed Authorization header' });

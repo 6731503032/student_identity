@@ -162,3 +162,29 @@ describe('7. audit event', () => {
     assert.ok(find('login', 'deny:bad_credentials'), 'failed login recorded');
   });
 });
+
+describe('8. service API key (extra)', () => {
+  test('staff issues a key once; the key reads claims only with consent; bad key is 401', async () => {
+    const created = await api('POST', '/service-clients', { token: token('staff-1', 'staff'), body: { name: 'job-board' } });
+    assert.equal(created.status, 201);
+    const key = created.body.apiKey;
+    assert.match(key, /^sik_/);
+    assert.ok(!JSON.stringify(tables.service_clients).includes(key), 'only a hash is stored');
+    assert.equal((await api('GET', '/dev/service-clients')).body.records.some((r) => 'api_key_hash' in r), false);
+
+    const claims = () => api('GET', `/students/${STUDENT}/claims`, { headers: { 'X-API-Key': key } });
+    assert.equal((await claims()).status, 403, 'no consent yet');
+    await api('PUT', '/me/consents/job-board', { token: token(STUDENT, 'student'), body: { scopes: ['profile:read'] } });
+    const ok = await claims();
+    assert.equal(ok.status, 200);
+    assert.deepEqual(ok.body.claims.name, { first: 'Ann', last: 'Lee' });
+    assert.equal(ok.body.claims.profileComplete, true);
+    assert.ok(!('email' in ok.body.claims), 'private fields are not shared');
+
+    assert.equal((await api('GET', `/students/${STUDENT}/claims`, { headers: { 'X-API-Key': 'sik_wrong' } })).status, 401);
+    const rotated = await api('POST', `/service-clients/${created.body.id}/keys`, { token: token('staff-1', 'staff') });
+    assert.equal(rotated.status, 201);
+    assert.equal((await claims()).status, 401, 'old key stops working after rotation');
+    assert.equal((await api('GET', `/students/${STUDENT}/claims`, { headers: { 'X-API-Key': rotated.body.apiKey } })).status, 200);
+  });
+});

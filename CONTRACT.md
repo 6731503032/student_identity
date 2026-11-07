@@ -8,7 +8,12 @@ profiles here) and flow **6** (Internship / Job Board read profile claims).
 (free tier sleeps when idle — the first request after ~15 min can take ~50 s;
 use a timeout of at least 20 s)
 
-All bodies are JSON. Protected routes need `Authorization: Bearer <token>`.
+All bodies are JSON. Two ways to authenticate:
+
+| Caller | Send | How to get it |
+|---|---|---|
+| A person (via your frontend) | `Authorization: Bearer <token>` | `POST /auth/login` — expires in 15 min |
+| **Your backend (service)** | `X-API-Key: sik_…` | Ask Team 01 — staff issue it on the Service clients screen. Long-lived; keep it in an env var, never in frontend code |
 CORS is open to browser frontends (`ALLOWED_ORIGINS`, default `*`).
 
 ---
@@ -72,12 +77,39 @@ Invalid, tampered or expired → `200 { "valid": false }`. No auth needed.
 | POST | `/tokens/verify` | any service | `valid`, `sub`, `role`, `scopes`, `expiresAt` |
 | GET | `/me` | person (token) | own profile |
 | GET | `/students/{id}` | self, instructor, staff | profile; `403` otherwise |
-| GET | `/students/{id}/claims` | service with `profile:read` **and** student consent | claims below; `403` if no scope or no consent |
+| GET | `/students/{id}/claims` | service (API key or service token) with `profile:read` **and** student consent | claims below; `401` bad key; `403` no consent; `404` unknown student |
 
 Claims response:
-```json
-{ "studentId": "6731503032", "claims": { "verified": true, "skills": [], "profileComplete": false }, "issuedAt": "2026-11-07T14:00:00.000Z" }
+```http
+GET /students/6731503029/claims
+X-API-Key: sik_…
 ```
+```json
+{
+  "studentId": "6731503029",
+  "claims": {
+    "verified": true,
+    "name": { "first": "Yosnawat", "last": "Onjan" },
+    "profileComplete": true,
+    "missingFields": [],
+    "skills": []
+  },
+  "issuedAt": "2026-11-07T15:00:00.000Z"
+}
+```
+
+| Claim | Meaning |
+|---|---|
+| `verified` | The student exists in the authoritative identity record |
+| `name` | First / last name (email and age are private and never shared) |
+| `profileComplete` | First name, last name and email are all filled in |
+| `missingFields` | Which of those are missing |
+| `skills` | Approved skills — empty until Identity stores skills |
+
+**Eligibility** is decided by your service, using these inputs:
+1. Request succeeds (`200`) → the student exists **and** consented to share with you. `403` means no consent — treat as *not eligible* and ask the student to allow your service on Identity's Consent screen.
+2. `claims.verified === true`.
+3. Add your own rules (e.g. require `profileComplete === true`).
 Students grant or revoke each service on the **Consent** screen. Every allow
 and deny is written to Identity's audit log.
 

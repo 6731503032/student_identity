@@ -126,3 +126,5 @@ pre.out { background: var(--bg); border: 1px solid var(--line); border-radius: 8
   .view { padding: 20px 16px; }
   .top { gap: 10px; padding: 10px 16px; }
 }
+.keybox { margin-top: 16px; padding: 14px; border-radius: 10px; background: var(--warn-soft); border: 1px solid var(--line); }
+.keybox .row { flex-wrap: nowrap; } .keybox .row input { flex: 1; min-width: 0; }
