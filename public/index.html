@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Student Identity</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Sign in -->
+  <main id="login" class="login" hidden>
+    <div class="login-card">
+      <div class="brand"><span class="mark">SI</span><div><b>Student Identity</b><small>Team 01 · Platform service</small></div></div>
+      <form id="loginForm">
+        <label>Subject (student ID / username / service name)
+          <input name="sub" required placeholder="6731503032" autocomplete="off">
+        </label>
+        <label>Role
+          <select name="role">
+            <option value="student">student</option>
+            <option value="staff">staff</option>
+            <option value="instructor">instructor</option>
+            <option value="service">service</option>
+          </select>
+        </label>
+        <label id="scopeRow" hidden class="check"><input type="checkbox" name="scope" value="profile:read" checked> scope <code>profile:read</code></label>
+        <button class="btn primary" type="submit">Sign in</button>
+        <p class="err" id="loginErr"></p>
+      </form>
+      <div class="presets">
+        <span>Quick:</span>
+        <button data-preset='{"sub":"6731503032","role":"student"}'>Student</button>
+        <button data-preset='{"sub":"staff-1","role":"staff"}'>Staff</button>
+        <button data-preset='{"sub":"instructor-1","role":"instructor"}'>Instructor</button>
+        <button data-preset='{"sub":"internship-service","role":"service","scopes":["profile:read"]}'>Service</button>
+      </div>
+      <p class="hint">Uses the dev-only <code>POST /dev/issue-token</code>. Tokens expire after 15 minutes.</p>
+    </div>
+  </main>
+
+  <!-- App shell -->
+  <div id="app" hidden>
+    <header class="top">
+      <div class="brand"><span class="mark">SI</span><b>Student Identity</b></div>
+      <nav id="nav"></nav>
+      <div class="who">
+        <span id="whoText"></span>
+        <span id="ttl" class="ttl"></span>
+        <button class="btn ghost sm" id="logout">Sign out</button>
+      </div>
+    </header>
+    <div class="layout">
+      <section id="view" class="view"></section>
+      <aside class="log">
+        <div class="log-head"><b>Request log</b><button class="btn ghost sm" id="clearLog">Clear</button></div>
+        <ol id="logList"></ol>
+      </aside>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

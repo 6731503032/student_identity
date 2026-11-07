@@ -1,0 +1,327 @@
+// Student Identity — frontend (vanilla JS, hash routing, served by Express from /public)
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const json = (v) => esc(JSON.stringify(v, null, 2));
+
+// ---------- session ----------
+let session = null; // { token, sub, role, scopes, exp }
+try { session = JSON.parse(sessionStorage.getItem('si_session')); } catch {}
+const saveSession = (s) => { session = s; try { s ? sessionStorage.setItem('si_session', JSON.stringify(s)) : sessionStorage.removeItem('si_session'); } catch {} };
+const decode = (t) => JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+
+// ---------- API + request log ----------
+async function api(method, path, body, headers = {}) {
+  const h = { ...headers };
+  if (body !== undefined) h['Content-Type'] = 'application/json';
+  if (session?.token) h.Authorization = `Bearer ${session.token}`;
+  let status = 0, data = null;
+  try {
+    const res = await fetch(path, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
+    status = res.status;
+    const text = await res.text();
+    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  } catch (e) { data = { error: e.message }; }
+  logReq(method, path, status, data);
+  if (status === 401 && session && path !== '/tokens/verify') { toast('Session expired — sign in again'); signOut(true); }
+  return { ok: status >= 200 && status < 300, status, data };
+}
+
+function logReq(method, path, status, data) {
+  const list = $('#logList');
+  $('.empty-log', list)?.remove();
+  const li = document.createElement('li');
+  li.innerHTML = `<div class="line"><span class="status s${String(status)[0]}">${status || 'ERR'}</span><b>${method}</b>
+    <span class="path">${esc(path)}</span><span class="t">${new Date().toLocaleTimeString()}</span></div>
+    <pre>${data == null ? '(empty body)' : json(data)}</pre>`;
+  li.onclick = () => li.classList.toggle('open');
+  list.prepend(li);
+}
+const emptyLog = () => { $('#logList').innerHTML = '<li class="empty-log">Requests you make appear here. Click one to see its response.</li>'; };
+
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3000);
+}
+const errMsg = (r) => r.data?.error || r.data?.message || `HTTP ${r.status}`;
+
+// ---------- auth ----------
+async function signIn({ sub, role, scopes = [] }) {
+  const r = await api('POST', '/dev/issue-token', { sub, role, scopes });
+  if (!r.ok) return errMsg(r);
+  const p = decode(r.data.token);
+  saveSession({ token: r.data.token, sub: p.sub, role: p.role, scopes: p.scopes || [], exp: p.exp });
+  location.hash = '';
+  boot();
+}
+async function signOut(silent) {
+  if (!silent && session) await api('DELETE', `/sessions/${encodeURIComponent(session.sub)}`);
+  saveSession(null);
+  boot();
+}
+
+const loginForm = $('#loginForm');
+loginForm.role.onchange = () => ($('#scopeRow').hidden = loginForm.role.value !== 'service');
+loginForm.onsubmit = async (e) => {
+  e.preventDefault();
+  const f = loginForm;
+  const scopes = f.role.value === 'service' && f.scope.checked ? ['profile:read'] : [];
+  $('#loginErr').textContent = (await signIn({ sub: f.sub.value.trim(), role: f.role.value, scopes })) || '';
+};
+document.querySelectorAll('[data-preset]').forEach((b) => (b.onclick = async () => {
+  $('#loginErr').textContent = (await signIn(JSON.parse(b.dataset.preset))) || '';
+}));
+$('#logout').onclick = () => signOut();
+$('#clearLog').onclick = emptyLog;
+
+// ---------- routes ----------
+const ROUTES = {
+  profile:  { label: 'My profile',      roles: ['student'],               render: viewProfile },
+  students: { label: 'Students',        roles: ['staff', 'instructor'],   render: viewStudents },
+  clients:  { label: 'Service clients', roles: ['staff'],                 render: viewClients },
+  claims:   { label: 'Claims',          roles: ['service'],               render: viewClaims },
+  tools:    { label: 'Tools',           roles: ['student', 'staff', 'instructor', 'service'], render: viewTools },
+};
+const allowed = () => Object.entries(ROUTES).filter(([, r]) => r.roles.includes(session.role));
+
+function boot() {
+  const authed = session && session.exp * 1000 > Date.now();
+  if (!authed && session) saveSession(null);
+  $('#login').hidden = !!authed;
+  $('#app').hidden = !authed;
+  if (!authed) { loginForm.sub.focus(); return; }
+  $('#whoText').innerHTML = `<b>${esc(session.sub)}</b> <span class="badge accent">${esc(session.role)}</span>`;
+  if (!$('#logList').children.length) emptyLog();
+  route();
+}
+
+function route() {
+  if (!session) return;
+  const list = allowed();
+  let key = location.hash.slice(2) || list[0][0];
+  if (!list.some(([k]) => k === key)) key = list[0][0];
+  $('#nav').innerHTML = list.map(([k, r]) => `<a href="#/${k}" class="${k === key ? 'active' : ''}">${r.label}</a>`).join('');
+  ROUTES[key].render($('#view'));
+}
+window.addEventListener('hashchange', route);
+
+setInterval(() => {
+  if (!session) return;
+  const left = Math.round(session.exp - Date.now() / 1000);
+  if (left <= 0) { toast('Token expired — sign in again'); return signOut(true); }
+  const el = $('#ttl');
+  el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  el.classList.toggle('low', left < 120);
+  el.title = 'Token time left';
+}, 1000);
+
+// ---------- views ----------
+const EDITABLE = [['first_name', 'First name'], ['last_name', 'Last name'], ['email', 'Email', 'email'], ['age', 'Age', 'number']];
+
+async function viewProfile(el) {
+  el.innerHTML = `<h2>My profile</h2><p class="sub">Your record in the identity service. Saving sends a <code>profile.updated</code> webhook.</p>
+    <div class="grid">
+      <div class="card"><h3>Details</h3><div id="pf">Loading…</div></div>
+      <div class="card"><h3>Profile completeness <span id="src"></span></h3><div id="pc">Loading…</div></div>
+    </div>
+    <div class="card" id="whCard" hidden style="margin-top:16px"><h3>Last webhook delivery</h3><div id="wh"></div></div>`;
+
+  const r = await api('GET', '/me');
+  if (!r.ok) {
+    $('#pf').innerHTML = `<p class="err">${esc(errMsg(r))}</p><p class="sub">No student record for <code>${esc(session.sub)}</code>. Ask staff to create it.</p>`;
+    $('#pc').innerHTML = '<p class="sub">—</p>';
+    return;
+  }
+  renderForm(r.data);
+  loadCompleteness();
+
+  function renderForm(s) {
+    $('#pf').innerHTML = `<form id="meForm">
+      <label>Student ID <input value="${esc(s.student_id)}" readonly></label>
+      <div class="row">${EDITABLE.slice(0, 2).map(field).join('')}</div>
+      ${field(EDITABLE[2])}
+      <div class="row">${field(EDITABLE[3])}<button class="btn primary" type="submit">Save changes</button></div>
+      <p class="err" id="meErr"></p></form>`;
+    function field([k, label, type = 'text']) {
+      return `<label>${label}<input name="${k}" type="${type}" value="${esc(s[k])}"></label>`;
+    }
+    $('#meForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target, body = {};
+      EDITABLE.forEach(([k, , type]) => {
+        const v = f[k].value.trim();
+        if (String(s[k] ?? '') !== v) body[k] = type === 'number' ? (v === '' ? null : Number(v)) : v || null;
+      });
+      if (!Object.keys(body).length) return toast('Nothing changed');
+      const btn = f.querySelector('button'); btn.disabled = true;
+      const u = await api('PATCH', '/me', body);
+      btn.disabled = false;
+      if (!u.ok) return ($('#meErr').textContent = errMsg(u));
+      const { _webhookDebug, ...student } = u.data;
+      toast('Profile saved');
+      renderForm(student);
+      loadCompleteness();
+      if (_webhookDebug) { $('#whCard').hidden = false; $('#wh').innerHTML = `<pre class="out">${json(_webhookDebug)}</pre>`; }
+    };
+  }
+}
+
+async function loadCompleteness() {
+  const c = await api('GET', '/me/profile-completeness');
+  if (!c.ok) return ($('#pc').innerHTML = `<p class="err">${esc(errMsg(c))}</p>`);
+  const d = c.data;
+  $('#src').innerHTML = d.source === 'ai' ? '<span class="badge ok">AI</span>' : '<span class="badge warn">Fallback</span>';
+  $('#pc').innerHTML = d.source === 'ai'
+    ? `<p>${esc(d.message)}</p>`
+    : `<p class="sub" style="margin:0">${esc(d.note)}</p>
+       <p style="margin:12px 0 0">${d.isComplete ? '<span class="badge ok">Complete</span>' : `<span class="badge bad">${d.missingFields.length} missing</span>`}</p>
+       <ul class="checklist">${d.checklist.map((i) => `<li class="${i.present ? 'on' : ''}">${esc(i.field)}</li>`).join('')}</ul>`;
+}
+
+async function viewStudents(el) {
+  const staff = session.role === 'staff';
+  el.innerHTML = `<h2>Students</h2><p class="sub">${staff ? 'Create, view and remove student records.' : 'Read-only list of student records.'}</p>
+    ${staff ? `<div class="card" style="margin-bottom:16px"><h3>Add student</h3>
+      <form id="addForm"><div class="row">
+        <label>Student ID<input name="studentId" required placeholder="6731503032"></label>
+        <label>First name<input name="firstName" required></label>
+        <label>Last name<input name="lastName" required></label>
+        <label>Email<input name="email" type="email" required placeholder="id@lamduan.mfu.ac.th"></label>
+        <button class="btn primary" type="submit">Add</button></div>
+        <p class="err" id="addErr"></p></form></div>` : ''}
+    <div class="card"><div class="row" style="margin-bottom:12px">
+      <label>Search<input id="q" placeholder="ID, name or email"></label>
+      <button class="btn" id="reload">Refresh</button></div>
+      <div class="table-wrap" id="tbl">Loading…</div></div>
+    <div class="card" id="detail" hidden style="margin-top:16px"></div>`;
+
+  let rows = [];
+  const load = async () => {
+    const r = await api('GET', '/students');
+    if (!r.ok) return ($('#tbl').innerHTML = `<p class="err">${esc(errMsg(r))}</p>`);
+    rows = r.data || []; draw();
+  };
+  const draw = () => {
+    const q = $('#q').value.trim().toLowerCase();
+    const list = rows.filter((s) => !q || [s.student_id, s.first_name, s.last_name, s.email].join(' ').toLowerCase().includes(q));
+    $('#tbl').innerHTML = !list.length ? '<p class="empty">No students found.</p>' : `<table>
+      <thead><tr><th>Student ID</th><th>Name</th><th>Email</th><th>Age</th><th></th></tr></thead>
+      <tbody>${list.map((s) => `<tr><td class="mono">${esc(s.student_id)}</td><td>${esc([s.first_name, s.last_name].filter(Boolean).join(' '))}</td>
+        <td>${esc(s.email)}</td><td>${esc(s.age ?? '—')}</td>
+        <td class="actions"><button class="btn sm" data-view="${esc(s.student_id)}">View</button>
+        ${staff ? `<button class="btn sm danger" data-del="${esc(s.student_id)}">Delete</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
+  };
+
+  $('#q').oninput = draw;
+  $('#reload').onclick = load;
+  $('#tbl').onclick = async (e) => {
+    const v = e.target.dataset.view, d = e.target.dataset.del;
+    if (v) {
+      const r = await api('GET', `/students/${encodeURIComponent(v)}`);
+      const box = $('#detail'); box.hidden = false;
+      box.innerHTML = r.ok ? `<h3>${esc(v)}</h3><dl class="kv">${Object.entries(r.data).map(([k, val]) => `<dt>${esc(k)}</dt><dd>${esc(val ?? '—')}</dd>`).join('')}</dl>`
+        : `<p class="err">${esc(errMsg(r))}</p>`;
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    if (d && confirm(`Delete student ${d}? This can't be undone.`)) {
+      const r = await api('DELETE', `/students/${encodeURIComponent(d)}`);
+      r.ok ? (toast(`Deleted ${d}`), $('#detail').hidden = true, load()) : toast(errMsg(r));
+    }
+  };
+  if (staff) $('#addForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries(new FormData(e.target));
+    const r = await api('POST', '/students', body);
+    if (!r.ok) return ($('#addErr').textContent = errMsg(r));
+    $('#addErr').textContent = ''; e.target.reset(); toast(`Added ${r.data.student_id}`); load();
+  };
+  load();
+}
+
+async function viewClients(el) {
+  el.innerHTML = `<h2>Service clients</h2><p class="sub">Register services that can request student claims. Re-sending the same Idempotency-Key returns the original record.</p>
+    <div class="card" style="margin-bottom:16px"><h3>Register client</h3>
+      <form id="scForm"><div class="row">
+        <label>Name<input name="name" required placeholder="internship-service"></label>
+        <label>Idempotency-Key<input name="key" placeholder="optional"></label>
+        <button class="btn" type="button" id="genKey">New key</button>
+        <button class="btn primary" type="submit">Register</button></div></form>
+      <div id="scOut"></div></div>
+    <div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin:0">Registered <span id="cnt" class="badge"></span></h3><button class="btn sm" id="reload">Refresh</button></div>
+      <div class="table-wrap" id="tbl">Loading…</div></div>`;
+
+  const form = $('#scForm');
+  $('#genKey').onclick = () => (form.key.value = `req-${crypto.randomUUID().slice(0, 8)}`);
+  const load = async () => {
+    const r = await api('GET', '/dev/service-clients');
+    if (!r.ok) return ($('#tbl').innerHTML = `<p class="err">${esc(errMsg(r))}</p>`);
+    $('#cnt').textContent = r.data.count;
+    $('#tbl').innerHTML = !r.data.records.length ? '<p class="empty">No service clients yet.</p>' : `<table>
+      <thead><tr><th>Name</th><th>ID</th><th>Idempotency key</th><th>Created</th></tr></thead>
+      <tbody>${r.data.records.map((c) => `<tr><td>${esc(c.name)}</td><td class="mono">${esc(c.id)}</td>
+        <td class="mono">${esc(c.idempotency_key ?? '—')}</td><td>${c.created_at ? esc(new Date(c.created_at).toLocaleString()) : '—'}</td></tr>`).join('')}</tbody></table>`;
+  };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const key = form.key.value.trim();
+    const r = await api('POST', '/service-clients', { name: form.name.value.trim() }, key ? { 'Idempotency-Key': key } : {});
+    $('#scOut').innerHTML = r.ok ? `<pre class="out">${json(r.data)}</pre>` : `<p class="err">${esc(errMsg(r))}</p>`;
+    if (r.ok) load();
+  };
+  $('#reload').onclick = load;
+  load();
+}
+
+function viewClaims(el) {
+  const hasScope = session.scopes.includes('profile:read');
+  el.innerHTML = `<h2>Student claims</h2><p class="sub">Request verified claims for a student. Requires the <code>profile:read</code> scope and the student's consent for <code>${esc(session.sub)}</code>.</p>
+    <div class="card">
+      <p>Scope: ${hasScope ? '<span class="badge ok">profile:read</span>' : '<span class="badge bad">profile:read missing</span>'}</p>
+      <form id="clForm"><div class="row"><label>Student ID<input name="id" required placeholder="123"></label>
+        <button class="btn primary" type="submit">Request claims</button></div></form>
+      <div id="clOut"></div></div>`;
+  $('#clForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const id = e.target.id.value.trim();
+    const r = await api('GET', `/students/${encodeURIComponent(id)}/claims`);
+    $('#clOut').innerHTML = r.ok
+      ? `<p style="margin-top:16px"><span class="badge ok">Granted</span></p><dl class="kv">
+          <dt>Verified</dt><dd>${r.data.claims.verified ? 'Yes' : 'No'}</dd>
+          <dt>Profile complete</dt><dd>${r.data.claims.profileComplete ? 'Yes' : 'No'}</dd>
+          <dt>Skills</dt><dd>${esc(r.data.claims.skills.join(', ') || '—')}</dd>
+          <dt>Issued</dt><dd>${esc(new Date(r.data.issuedAt).toLocaleString())}</dd></dl>`
+      : `<p style="margin-top:16px"><span class="badge bad">${r.status}</span> ${esc(errMsg(r))}</p>`;
+  };
+}
+
+function viewTools(el) {
+  el.innerHTML = `<h2>Tools</h2><p class="sub">Token verification and dev-only switches for evidence capture.</p>
+    <div class="grid">
+      <div class="card"><h3>Verify a token</h3>
+        <form id="tvForm"><label>JWT<input name="t" placeholder="eyJ…" class="mono"></label>
+          <div class="row"><button class="btn" type="button" id="useMine">Use my token</button><button class="btn primary" type="submit">Verify</button></div></form>
+        <div id="tvOut"></div></div>
+      <div class="card"><h3>AI dependency <span class="badge">dev</span></h3>
+        <p class="sub" style="margin-bottom:12px">Simulate an outage of the AI suggestion service. Profile completeness falls back to the checklist.</p>
+        <div class="row"><button class="btn danger" id="brk">Break AI</button><button class="btn" id="fix">Fix AI</button></div>
+        <div id="aiOut"></div></div>
+    </div>`;
+  const f = $('#tvForm');
+  $('#useMine').onclick = () => (f.t.value = session.token);
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const r = await api('POST', '/tokens/verify', { token: f.t.value.trim() });
+    $('#tvOut').innerHTML = r.data?.valid
+      ? `<p style="margin-top:16px"><span class="badge ok">Valid</span></p><dl class="kv"><dt>sub</dt><dd>${esc(r.data.sub)}</dd><dt>role</dt><dd>${esc(r.data.role)}</dd><dt>scopes</dt><dd>${esc(r.data.scopes.join(', ') || '—')}</dd></dl>`
+      : `<p style="margin-top:16px"><span class="badge bad">Invalid or expired</span></p>`;
+  };
+  const ai = async (path) => {
+    const r = await api('POST', path);
+    $('#aiOut').innerHTML = r.ok ? `<p style="margin-top:12px">${r.data.broken ? '<span class="badge bad">AI down</span>' : '<span class="badge ok">AI up</span>'} <span class="mono">${esc(r.data.timestamp)}</span></p>` : `<p class="err">${esc(errMsg(r))}</p>`;
+  };
+  $('#brk').onclick = () => ai('/dev/break-ai');
+  $('#fix').onclick = () => ai('/dev/fix-ai');
+}
+
+boot();
