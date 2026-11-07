@@ -52,12 +52,25 @@ label.scope small { display: block; color: var(--muted); font-size: 12.5px; }
 /* login */
 .login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
 .login-card { width: 100%; max-width: 400px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; }
-.login-card form { display: grid; gap: 14px; margin: 24px 0 18px; }
+.login-card { max-width: 440px; }
+.login-card > form { display: grid; gap: 14px; margin: 20px 0 8px; }
+.tabs { display: flex; gap: 4px; margin-top: 24px; padding: 4px; background: var(--bg); border-radius: 10px; }
+.tabs button { flex: 1; font: inherit; font-weight: 500; border: 0; background: transparent; color: var(--muted); padding: 8px; border-radius: 7px; cursor: pointer; }
+.tabs button.active { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+.ferr, .hintline { font-size: 12px; min-height: 0; }
+.ferr { color: var(--bad); }
+.hintline { color: var(--muted); }
+.hintline.bad { color: var(--bad); }
+input[aria-invalid] { border-color: var(--bad); }
+details.dev { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; }
+details.dev summary { cursor: pointer; color: var(--muted); }
+details.dev .hint { margin: 10px 0; }
+details.dev form { margin-top: 12px; }
 .presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .presets button { font: inherit; font-size: 12.5px; border: 1px solid var(--line); background: transparent; color: var(--ink);
   border-radius: 999px; padding: 3px 10px; cursor: pointer; }
 .presets button:hover { border-color: var(--accent); color: var(--accent); }
-.hint { color: var(--muted); font-size: 12.5px; margin: 16px 0 0; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; }
 
 /* shell */
 .top { display: flex; align-items: center; gap: 24px; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line);
@@ -69,19 +82,7 @@ label.scope small { display: block; color: var(--muted); font-size: 12.5px; }
 .who { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .ttl { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .ttl.low { color: var(--bad); }
-.layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: calc(100vh - 53px); }
-.view { padding: 28px; max-width: 960px; width: 100%; }
-.log { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; max-height: calc(100vh - 53px);
-  position: sticky; top: 53px; }
-.log-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-#logList { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
-#logList li { padding: 10px 16px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; cursor: pointer; }
-#logList li .line { display: flex; gap: 8px; align-items: baseline; }
-#logList li .path { flex: 1; word-break: break-all; }
-#logList li .t { color: var(--muted); }
-#logList pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; color: var(--muted); max-height: 260px; overflow: auto; }
-#logList li:not(.open) pre { display: none; }
-.empty-log { color: var(--muted); font-family: inherit !important; cursor: default !important; }
+.view { padding: 28px; max-width: 1000px; width: 100%; margin: 0 auto; }
 
 /* cards / grid */
 .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
@@ -100,8 +101,6 @@ label.scope small { display: block; color: var(--muted); font-size: 12.5px; }
 .badge.warn { background: var(--warn-soft); color: var(--warn); }
 .badge.bad { background: var(--bad-soft); color: var(--bad); }
 .badge.accent { background: var(--accent-soft); color: var(--accent); }
-.status { font-weight: 600; }
-.s2 { color: var(--ok); } .s4 { color: var(--warn); } .s5 { color: var(--bad); }
 
 /* checklist */
 .checklist { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
@@ -124,8 +123,6 @@ pre.out { background: var(--bg); border: 1px solid var(--line); border-radius: 8
   padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 20; max-width: calc(100% - 32px); }
 
 @media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; }
-  .log { position: static; border-left: 0; border-top: 1px solid var(--line); max-height: 360px; }
   .view { padding: 20px 16px; }
   .top { gap: 10px; padding: 10px 16px; }
 }

@@ -1,0 +1,95 @@
+const express = require('express');
+const router = express.Router();
+const accounts = require('../lib/accounts');
+const roles = require('../lib/roles');
+const studentsDb = require('../lib/students');
+const audit = require('../lib/audit');
+const { issueToken, TOKEN_TTL_SECONDS } = require('../lib/tokens');
+
+/**
+ * Sign-up / sign-in for students. The PRD lists a sign-in screen but no
+ * sign-in endpoint, so these two routes are additions (see README).
+ * The token's role comes from the `roles` table (default 'student'), so a
+ * role assigned on the Role lookup screen takes effect at the next sign-in.
+ */
+
+const STUDENT_ID = /^\d{10}$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD = 8;
+
+async function tokenFor(subject) {
+  const row = await roles.get(subject);
+  const role = row ? row.role : 'student';
+  return { token: issueToken({ sub: subject, role, scopes: [] }), role, expiresIn: TOKEN_TTL_SECONDS };
+}
+
+// POST /auth/signup — create a student record + credentials, return a token
+router.post('/auth/signup', async (req, res) => {
+  const body = req.body || {};
+  const studentId = String(body.studentId || '').trim();
+  const firstName = String(body.firstName || '').trim();
+  const lastName = String(body.lastName || '').trim();
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+
+  const errors = {};
+  if (!STUDENT_ID.test(studentId)) errors.studentId = 'Student ID must be 10 digits';
+  if (!firstName || firstName.length > 100) errors.firstName = 'First name is required';
+  if (!lastName || lastName.length > 100) errors.lastName = 'Last name is required';
+  if (!EMAIL.test(email)) errors.email = 'Enter a valid email address';
+  if (password.length < MIN_PASSWORD) errors.password = `Password must be at least ${MIN_PASSWORD} characters`;
+  if (Object.keys(errors).length) {
+    audit.record({ actor: studentId || 'unknown', action: 'signup', resource: '/auth/signup', result: 'deny:validation' });
+    return res.status(400).json({ error: 'Please fix the highlighted fields', fields: errors });
+  }
+
+  try {
+    if (await accounts.get(studentId)) {
+      audit.record({ actor: studentId, action: 'signup', resource: '/auth/signup', result: 'deny:account_exists' });
+      return res.status(409).json({ error: 'An account already exists for this student ID. Sign in instead.' });
+    }
+
+    // A staff member may have created the student record already; let the
+    // student claim it only if the email matches.
+    let existing = null;
+    try { existing = await studentsDb.getStudent(studentId); } catch (e) { /* not found */ }
+    if (existing && String(existing.email || '').toLowerCase() !== email) {
+      audit.record({ actor: studentId, action: 'signup', resource: '/auth/signup', result: 'deny:email_mismatch' });
+      return res.status(409).json({ error: 'This student ID is registered with a different email.' });
+    }
+    if (!existing) {
+      try {
+        await studentsDb.createStudent({ studentId, firstName, lastName, email });
+      } catch (e) {
+        audit.record({ actor: studentId, action: 'signup', resource: '/auth/signup', result: 'deny:email_taken' });
+        return res.status(409).json({ error: 'This email is already used by another student.' });
+      }
+    }
+
+    await accounts.create(studentId, password);
+    audit.record({ actor: studentId, action: 'signup', resource: '/auth/signup', result: existing ? 'allow:claimed' : 'allow:created' });
+    res.status(201).json(await tokenFor(studentId));
+  } catch (err) {
+    res.status(500).json({ error: 'Sign-up failed. Try again.' });
+  }
+});
+
+// POST /auth/login — check credentials, return a token with the stored role
+router.post('/auth/login', async (req, res) => {
+  const studentId = String((req.body && req.body.studentId) || '').trim();
+  const password = String((req.body && req.body.password) || '');
+  try {
+    const account = studentId && password ? await accounts.get(studentId) : null;
+    if (!account || !accounts.verifyPassword(password, account.password_hash)) {
+      audit.record({ actor: studentId || 'unknown', action: 'login', resource: '/auth/login', result: 'deny:bad_credentials' });
+      return res.status(401).json({ error: 'Wrong student ID or password' });
+    }
+    const out = await tokenFor(studentId);
+    audit.record({ actor: studentId, action: 'login', resource: '/auth/login', result: `allow:${out.role}` });
+    res.status(200).json(out);
+  } catch (err) {
+    res.status(500).json({ error: 'Sign-in failed. Try again.' });
+  }
+});
+
+module.exports = router;

@@ -9,7 +9,7 @@ try { session = JSON.parse(sessionStorage.getItem('si_session')); } catch {}
 const saveSession = (s) => { session = s; try { s ? sessionStorage.setItem('si_session', JSON.stringify(s)) : sessionStorage.removeItem('si_session'); } catch {} };
 const decode = (t) => JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
 
-// ---------- API + request log ----------
+// ---------- API ----------
 async function api(method, path, body, headers = {}) {
   const h = { ...headers };
   if (body !== undefined) h['Content-Type'] = 'application/json';
@@ -20,23 +20,10 @@ async function api(method, path, body, headers = {}) {
     status = res.status;
     const text = await res.text();
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  } catch (e) { data = { error: e.message }; }
-  logReq(method, path, status, data);
+  } catch (e) { data = { error: 'Network error — is the server running?' }; }
   if (status === 401 && session && path !== '/tokens/verify') { toast('Session expired — sign in again'); signOut(true); }
   return { ok: status >= 200 && status < 300, status, data };
 }
-
-function logReq(method, path, status, data) {
-  const list = $('#logList');
-  $('.empty-log', list)?.remove();
-  const li = document.createElement('li');
-  li.innerHTML = `<div class="line"><span class="status s${String(status)[0]}">${status || 'ERR'}</span><b>${method}</b>
-    <span class="path">${esc(path)}</span><span class="t">${new Date().toLocaleTimeString()}</span></div>
-    <pre>${data == null ? '(empty body)' : json(data)}</pre>`;
-  li.onclick = () => li.classList.toggle('open');
-  list.prepend(li);
-}
-const emptyLog = () => { $('#logList').innerHTML = '<li class="empty-log">Requests you make appear here. Click one to see its response.</li>'; };
 
 let toastTimer;
 function toast(msg) {
@@ -46,11 +33,9 @@ function toast(msg) {
 const errMsg = (r) => r.data?.error || r.data?.message || `HTTP ${r.status}`;
 
 // ---------- auth ----------
-async function signIn({ sub, role, scopes = [] }) {
-  const r = await api('POST', '/dev/issue-token', { sub, role, scopes });
-  if (!r.ok) return errMsg(r);
-  const p = decode(r.data.token);
-  saveSession({ token: r.data.token, sub: p.sub, role: p.role, scopes: p.scopes || [], exp: p.exp });
+function startSession(token) {
+  const p = decode(token);
+  saveSession({ token, sub: p.sub, role: p.role, scopes: p.scopes || [], exp: p.exp });
   location.hash = '';
   boot();
 }
@@ -60,19 +45,76 @@ async function signOut(silent) {
   boot();
 }
 
-const loginForm = $('#loginForm');
-loginForm.role.onchange = () => ($('#scopeRow').hidden = loginForm.role.value !== 'service');
-loginForm.onsubmit = async (e) => {
-  e.preventDefault();
-  const f = loginForm;
-  const scopes = f.role.value === 'service' && f.scope.checked ? ['profile:read'] : [];
-  $('#loginErr').textContent = (await signIn({ sub: f.sub.value.trim(), role: f.role.value, scopes })) || '';
+// tabs
+const showTab = (name) => {
+  document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('[data-pane]').forEach((f) => (f.hidden = f.dataset.pane !== name));
+  $(`[data-pane="${name}"] input`).focus();
 };
-document.querySelectorAll('[data-preset]').forEach((b) => (b.onclick = async () => {
-  $('#loginErr').textContent = (await signIn(JSON.parse(b.dataset.preset))) || '';
-}));
+document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
+
+const busy = (form, on) => { const b = form.querySelector('button[type=submit]'); b.disabled = on; };
+
+$('#signinForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target, err = f.querySelector('[data-err]');
+  const studentId = f.studentId.value.trim(), password = f.password.value;
+  if (!studentId || !password) return (err.textContent = 'Enter your student ID and password');
+  busy(f, true);
+  const r = await api('POST', '/auth/login', { studentId, password });
+  busy(f, false);
+  if (!r.ok) { err.textContent = errMsg(r); f.password.value = ''; return f.password.focus(); }
+  err.textContent = ''; f.reset();
+  startSession(r.data.token);
+};
+
+$('#signupForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target, err = f.querySelector('[data-err]');
+  const body = Object.fromEntries(['studentId', 'firstName', 'lastName', 'email', 'password'].map((k) => [k, f[k].value.trim()]));
+  body.password = f.password.value;
+  // client-side checks mirror the server; the server is still the authority
+  const fields = {};
+  if (!/^\d{10}$/.test(body.studentId)) fields.studentId = 'Student ID must be 10 digits';
+  if (!body.firstName) fields.firstName = 'Required';
+  if (!body.lastName) fields.lastName = 'Required';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) fields.email = 'Enter a valid email address';
+  if (body.password.length < 8) fields.password = 'At least 8 characters';
+  if (f.confirm.value !== body.password) fields.confirm = 'Passwords do not match';
+  showFieldErrors(f, fields);
+  if (Object.keys(fields).length) return (err.textContent = '');
+  busy(f, true);
+  const r = await api('POST', '/auth/signup', body);
+  busy(f, false);
+  if (!r.ok) { showFieldErrors(f, r.data?.fields || {}); return (err.textContent = errMsg(r)); }
+  err.textContent = ''; f.reset();
+  toast('Account created — welcome!');
+  startSession(r.data.token);
+};
+
+function showFieldErrors(form, fields) {
+  form.querySelectorAll('[data-f]').forEach((el) => {
+    const msg = fields[el.dataset.f];
+    if (el.classList.contains('hintline')) { el.dataset.def ??= el.textContent; el.textContent = msg || el.dataset.def; el.classList.toggle('bad', !!msg); }
+    else el.textContent = msg || '';
+    el.closest('label').querySelector('input').toggleAttribute('aria-invalid', !!msg);
+  });
+}
+
+// dev shortcuts (no password; dev-only endpoint)
+async function devSignIn(payload) {
+  const r = await api('POST', '/dev/issue-token', payload);
+  if (!r.ok) return ($('#devErr').textContent = r.status === 404 ? 'Dev sign-in is disabled on this server' : errMsg(r));
+  $('#devErr').textContent = '';
+  startSession(r.data.token);
+}
+document.querySelectorAll('[data-preset]').forEach((b) => (b.onclick = () => devSignIn(JSON.parse(b.dataset.preset))));
+$('#devForm').onsubmit = (e) => {
+  e.preventDefault();
+  const f = e.target, role = f.role.value;
+  devSignIn({ sub: f.sub.value.trim(), role, scopes: role === 'service' ? ['profile:read'] : [] });
+};
 $('#logout').onclick = () => signOut();
-$('#clearLog').onclick = emptyLog;
 
 // ---------- routes ----------
 const ROUTES = {
@@ -91,9 +133,8 @@ function boot() {
   if (!authed && session) saveSession(null);
   $('#login').hidden = !!authed;
   $('#app').hidden = !authed;
-  if (!authed) { loginForm.sub.focus(); return; }
+  if (!authed) { showTab('signin'); return; }
   $('#whoText').innerHTML = `<b>${esc(session.sub)}</b> <span class="badge accent">${esc(session.role)}</span>`;
-  if (!$('#logList').children.length) emptyLog();
   route();
 }
 

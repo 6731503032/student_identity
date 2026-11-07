@@ -9,34 +9,51 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Sign in -->
+  <!-- Sign in / Sign up -->
   <main id="login" class="login" hidden>
     <div class="login-card">
       <div class="brand"><span class="mark">SI</span><div><b>Student Identity</b><small>Team 01 · Platform service</small></div></div>
-      <form id="loginForm">
-        <label>Subject (student ID / username / service name)
-          <input name="sub" required placeholder="6731503032" autocomplete="off">
-        </label>
-        <label>Role
-          <select name="role">
-            <option value="student">student</option>
-            <option value="staff">staff</option>
-            <option value="instructor">instructor</option>
-            <option value="service">service</option>
-          </select>
-        </label>
-        <label id="scopeRow" hidden class="check"><input type="checkbox" name="scope" value="profile:read" checked> scope <code>profile:read</code></label>
-        <button class="btn primary" type="submit">Sign in</button>
-        <p class="err" id="loginErr"></p>
-      </form>
-      <div class="presets">
-        <span>Quick:</span>
-        <button data-preset='{"sub":"6731503032","role":"student"}'>Student</button>
-        <button data-preset='{"sub":"staff-1","role":"staff"}'>Staff</button>
-        <button data-preset='{"sub":"instructor-1","role":"instructor"}'>Instructor</button>
-        <button data-preset='{"sub":"internship-service","role":"service","scopes":["profile:read"]}'>Service</button>
+
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="signin" class="active">Sign in</button>
+        <button type="button" role="tab" data-tab="signup">Create account</button>
       </div>
-      <p class="hint">Uses the dev-only <code>POST /dev/issue-token</code>. Tokens expire after 15 minutes.</p>
+
+      <form id="signinForm" data-pane="signin" novalidate>
+        <label>Student ID<input name="studentId" inputmode="numeric" autocomplete="username" placeholder="6731503032" required></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="btn primary" type="submit">Sign in</button>
+        <p class="err" data-err></p>
+      </form>
+
+      <form id="signupForm" data-pane="signup" novalidate hidden>
+        <label>Student ID<input name="studentId" inputmode="numeric" maxlength="10" autocomplete="username" placeholder="6731503032" required><small class="ferr" data-f="studentId"></small></label>
+        <div class="row">
+          <label>First name<input name="firstName" autocomplete="given-name" required><small class="ferr" data-f="firstName"></small></label>
+          <label>Last name<input name="lastName" autocomplete="family-name" required><small class="ferr" data-f="lastName"></small></label>
+        </div>
+        <label>Email<input name="email" type="email" autocomplete="email" placeholder="6731503032@lamduan.mfu.ac.th" required><small class="ferr" data-f="email"></small></label>
+        <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required><small class="hintline" data-f="password">At least 8 characters</small></label>
+        <label>Confirm password<input name="confirm" type="password" autocomplete="new-password" required><small class="ferr" data-f="confirm"></small></label>
+        <button class="btn primary" type="submit">Create account</button>
+        <p class="err" data-err></p>
+      </form>
+
+      <details class="dev">
+        <summary>Dev shortcuts</summary>
+        <p class="hint">Sign in without a password as any role, via the dev-only <code>POST /dev/issue-token</code>. Use this for staff, instructor and service testing.</p>
+        <div class="presets">
+          <button type="button" data-preset='{"sub":"staff-1","role":"staff"}'>Staff</button>
+          <button type="button" data-preset='{"sub":"instructor-1","role":"instructor"}'>Instructor</button>
+          <button type="button" data-preset='{"sub":"internship-service","role":"service","scopes":["profile:read"]}'>Service</button>
+        </div>
+        <form id="devForm" class="row">
+          <label>Subject<input name="sub" required placeholder="other-service" autocomplete="off"></label>
+          <label style="flex:0 0 130px">Role<select name="role"><option>student</option><option>staff</option><option>instructor</option><option>service</option></select></label>
+          <button class="btn" type="submit">Go</button>
+        </form>
+        <p class="err" id="devErr"></p>
+      </details>
     </div>
   </main>
 
@@ -51,13 +68,7 @@
         <button class="btn ghost sm" id="logout">Sign out</button>
       </div>
     </header>
-    <div class="layout">
-      <section id="view" class="view"></section>
-      <aside class="log">
-        <div class="log-head"><b>Request log</b><button class="btn ghost sm" id="clearLog">Clear</button></div>
-        <ol id="logList"></ol>
-      </aside>
-    </div>
+    <section id="view" class="view"></section>
   </div>
 
   <div id="toast" class="toast" hidden></div>

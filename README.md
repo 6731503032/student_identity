@@ -224,3 +224,28 @@ Endpoints added (not in the PRD's REST list verbatim; they back the two screens)
 
 Every grant, revoke, lookup and assignment writes an audit event. Granting
 consent here is what makes `GET /students/:id/claims` return 200 for that service.
+
+## Sign-up & sign-in (added)
+
+**One-time setup:** run `supabase/migrations/20261107140000_create_accounts.sql`
+in the Supabase SQL editor (creates the `accounts` table).
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| POST | `/auth/signup` | `studentId` (10 digits), `firstName`, `lastName`, `email`, `password` (≥ 8) | `201 { token, role, expiresIn }`; `400` with per-field `fields` errors; `409` if the account exists, the email is taken, or a staff-created record has a different email |
+| POST | `/auth/login` | `studentId`, `password` | `200 { token, role, expiresIn }`; `401` on wrong credentials |
+
+- Passwords are stored as salted scrypt hashes (`lib/accounts.js`), never plain text.
+- The token's role comes from the `roles` table (default `student`), so a role
+  assigned on the Role lookup screen applies at the next sign-in.
+- If staff already created the student record, signing up with the **same email**
+  claims it instead of creating a duplicate.
+- Every sign-up and sign-in attempt (allowed or denied) writes an audit event.
+
+## Integrating with other teams (added)
+
+See **[CONTRACT.md](CONTRACT.md)** — tokens, roles, endpoints, errors and the
+`profile.updated` webhook, plus a Course Catalog section.
+`examples/course-catalog-auth.js` is copy-paste Express middleware other teams
+use to require a role (e.g. staff-only course edits). CORS is enabled
+(`ALLOWED_ORIGINS`, default `*`).

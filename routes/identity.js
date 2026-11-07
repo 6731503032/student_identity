@@ -137,7 +137,10 @@ router.post('/tokens/verify', (req, res) => {
   const { token } = req.body || {};
   try {
     const decoded = verifyToken(token);
-    res.status(200).json({ valid: true, sub: decoded.sub, role: decoded.role, scopes: decoded.scopes || [] });
+    res.status(200).json({
+      valid: true, sub: decoded.sub, role: decoded.role, scopes: decoded.scopes || [],
+      expiresAt: new Date(decoded.exp * 1000).toISOString(),
+    });
   } catch (err) {
     res.status(200).json({ valid: false });
   }

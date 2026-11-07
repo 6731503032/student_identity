@@ -2,9 +2,11 @@ const express = require('express');
 const identityRoutes = require('./routes/identity');
 
 const app = express();
+app.use(require('./middleware/cors')); // let other teams' frontends call us
 app.use(express.json());
 app.use(express.static(require('path').join(__dirname, 'public'))); // frontend
 
+app.use('/', require('./routes/auth')); // sign-up / sign-in
 app.use('/', identityRoutes);
 
 // Dev-only token-issuing helper — never mount this in production
