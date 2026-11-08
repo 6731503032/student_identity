@@ -1,7 +1,7 @@
 {
   "name": "student-identity-service",
   "version": "0.1.0",
-  "description": "Team 01 - Student Identity. Step 1 scaffold: stub endpoints per PRD_Student_Identity.md",
+  "description": "Team 01 - Student Identity: student profiles, role-based access, consent-gated claims for Digital Campus services",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

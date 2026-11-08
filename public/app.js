@@ -159,58 +159,82 @@ setInterval(() => {
 }, 1000);
 
 // ---------- views ----------
-const EDITABLE = [['first_name', 'First name'], ['last_name', 'Last name'], ['email', 'Email', 'email'], ['age', 'Age', 'number']];
+// Only the fields a student fills in at sign-up are shown and edited here.
+const EDITABLE = [['first_name', 'First name'], ['last_name', 'Last name'], ['email', 'Email', 'email']];
 
 async function viewProfile(el) {
-  el.innerHTML = `<h2>My profile</h2><p class="sub">Your record in the identity service. Saving sends a <code>profile.updated</code> webhook.</p>
-    <div class="grid">
-      <div class="card"><h3>Details</h3><div id="pf">Loading…</div></div>
-      <div class="card"><h3>Profile completeness <span id="src"></span></h3><div id="pc">Loading…</div></div>
-    </div>
-    <div class="card" id="whCard" hidden style="margin-top:16px"><h3>Last webhook delivery</h3><div id="wh"></div></div>`;
+  el.innerHTML = `<div id="pf"><div class="card">Loading…</div></div>
+    <div class="card" style="margin-top:16px"><h3>Profile completeness <span id="src"></span></h3><div id="pc">Loading…</div></div>`;
 
   const r = await api('GET', '/me');
   if (!r.ok) {
-    $('#pf').innerHTML = `<p class="err">${esc(errMsg(r))}</p><p class="sub">No student record for <code>${esc(session.sub)}</code>. Ask staff to create it.</p>`;
+    $('#pf').innerHTML = `<div class="card"><p class="err">${esc(errMsg(r))}</p><p class="sub" style="margin:0">No student record for <code>${esc(session.sub)}</code>. Ask staff to create it.</p></div>`;
     $('#pc').innerHTML = '<p class="sub">—</p>';
     return;
   }
-  renderForm(r.data);
+  renderView(r.data);
   loadCompleteness();
 
+  function renderView(s) {
+    const name = [s.first_name, s.last_name].filter(Boolean).join(' ');
+    const initials = ((s.first_name || '?')[0] + (s.last_name || '')[0] || '').toUpperCase();
+    const v = (x) => (x ? esc(x) : '<span class="sub">—</span>');
+    $('#pf').innerHTML = `
+      <div class="card pf-head">
+        <div class="avatar" aria-hidden="true">${esc(initials)}</div>
+        <div class="pf-main">
+          <h2 class="pf-title"><span class="mono">${esc(s.student_id)}</span> : <span class="pf-name">${v(name)}</span></h2>
+          <div class="pf-line"><span>Email :</span> ${v(s.email)}</div>
+        </div>
+        <button class="btn sm" id="editBtn">Edit</button>
+      </div>
+      <p class="sub pf-note">If your information is incorrect, edit it here or contact staff.</p>
+      <div class="card pf-section">
+        <div class="pf-section-head">Personal Information</div>
+        <dl class="pf-grid">
+          <div><dt>Student Code</dt><dd class="mono">${esc(s.student_id)}</dd></div>
+          <div><dt>Email</dt><dd>${v(s.email)}</dd></div>
+          <div><dt>First Name</dt><dd>${v(s.first_name)}</dd></div>
+          <div><dt>Last Name</dt><dd>${v(s.last_name)}</dd></div>
+        </dl>
+      </div>`;
+    $('#editBtn').onclick = () => renderForm(s);
+  }
+
   function renderForm(s) {
-    $('#pf').innerHTML = `<form id="meForm">
-      <label>Student ID <input value="${esc(s.student_id)}" readonly></label>
+    $('#pf').innerHTML = `<div class="card"><h3>Edit profile</h3><form id="meForm">
+      <label>Student Code <input value="${esc(s.student_id)}" readonly></label>
       <div class="row">${EDITABLE.slice(0, 2).map(field).join('')}</div>
       ${field(EDITABLE[2])}
-      <div class="row">${field(EDITABLE[3])}<button class="btn primary" type="submit">Save changes</button></div>
-      <p class="err" id="meErr"></p></form>`;
+      <div class="row"><button class="btn primary" type="submit">Save changes</button><button class="btn" type="button" id="cancelEdit">Cancel</button></div>
+      <p class="err" id="meErr"></p></form>
+      <p class="sub" style="margin:0">Saving sends a <code>profile.updated</code> webhook (email is not shared).</p></div>`;
     function field([k, label, type = 'text']) {
       return `<label>${label}<input name="${k}" type="${type}" value="${esc(s[k])}"></label>`;
     }
+    $('#cancelEdit').onclick = () => renderView(s);
     $('#meForm').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target, body = {};
-      EDITABLE.forEach(([k, , type]) => {
-        const v = f[k].value.trim();
-        if (String(s[k] ?? '') !== v) body[k] = type === 'number' ? (v === '' ? null : Number(v)) : v || null;
+      EDITABLE.forEach(([k]) => {
+        const val = f[k].value.trim();
+        if (String(s[k] ?? '') !== val) body[k] = val;
       });
-      if (!Object.keys(body).length) return toast('Nothing changed');
-      const btn = f.querySelector('button'); btn.disabled = true;
+      if (!Object.keys(body).length) return renderView(s);
+      const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
       const u = await api('PATCH', '/me', body);
       btn.disabled = false;
       if (!u.ok) {
-        const f = u.data?.fields || {};
+        const fe = u.data?.fields || {};
         const labels = Object.fromEntries(EDITABLE.map(([k, l]) => [k, l]));
-        return ($('#meErr').textContent = Object.keys(f).length
-          ? Object.entries(f).map(([k, m]) => `${labels[k] || k}: ${m}`).join(' · ')
+        return ($('#meErr').textContent = Object.keys(fe).length
+          ? Object.entries(fe).map(([k, m]) => `${labels[k] || k}: ${m}`).join(' · ')
           : errMsg(u));
       }
       const { _webhookDebug, ...student } = u.data;
       toast('Profile saved');
-      renderForm(student);
+      renderView(student);
       loadCompleteness();
-      if (_webhookDebug) { $('#whCard').hidden = false; $('#wh').innerHTML = `<pre class="out">${json(_webhookDebug)}</pre>`; }
     };
   }
 }
