@@ -29,6 +29,13 @@ describe('1. sign-in', () => {
     assert.equal(login.status, 200);
     assert.ok(login.body.token);
 
+    const t = login.body.token;
+    assert.equal((await api('POST', '/auth/change-password', { token: t, body: { currentPassword: 'wrong-pass', newPassword: 'newsecret1' } })).status, 400, 'wrong current password is 400, not 401, so the client is not signed out');
+    assert.equal((await api('POST', '/auth/change-password', { token: t, body: { currentPassword: 'secret123', newPassword: 'short' } })).status, 400);
+    assert.equal((await api('POST', '/auth/change-password', { token: t, body: { currentPassword: 'secret123', newPassword: 'newsecret1' } })).status, 204);
+    assert.equal((await api('POST', '/auth/login', { body: { studentId: '6731503029', password: 'secret123' } })).status, 401, 'old password stops working');
+    assert.equal((await api('POST', '/auth/login', { body: { studentId: '6731503029', password: 'newsecret1' } })).status, 200);
+
     const dup = await api('POST', '/auth/signup', {
       body: { studentId: '6731503029', firstName: 'X', lastName: 'Y', email: 'x@y.com', password: 'secret123' },
     });

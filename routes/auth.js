@@ -5,6 +5,7 @@ const roles = require('../lib/roles');
 const studentsDb = require('../lib/students');
 const audit = require('../lib/audit');
 const { issueToken, TOKEN_TTL_SECONDS } = require('../lib/tokens');
+const { authenticate } = require('../middleware/auth');
 
 /**
  * Sign-up / sign-in for students. The PRD lists a sign-in screen but no
@@ -89,6 +90,29 @@ router.post('/auth/login', async (req, res) => {
     res.status(200).json(out);
   } catch (err) {
     res.status(500).json({ error: 'Sign-in failed. Try again.' });
+  }
+});
+
+// POST /auth/change-password — signed-in user changes their own password
+router.post('/auth/change-password', authenticate, async (req, res) => {
+  const subject = req.user.sub;
+  const currentPassword = String((req.body && req.body.currentPassword) || '');
+  const newPassword = String((req.body && req.body.newPassword) || '');
+  if (newPassword.length < MIN_PASSWORD) {
+    return res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD} characters`, fields: { newPassword: `At least ${MIN_PASSWORD} characters` } });
+  }
+  try {
+    const account = await accounts.get(subject);
+    if (!account) return res.status(404).json({ error: 'This account has no password (it signs in another way)' });
+    if (!accounts.verifyPassword(currentPassword, account.password_hash)) {
+      audit.record({ actor: subject, action: 'change_password', resource: '/auth/change-password', result: 'deny:wrong_current' });
+      return res.status(400).json({ error: 'Current password is incorrect', fields: { currentPassword: 'Incorrect password' } });
+    }
+    await accounts.setPassword(subject, newPassword);
+    audit.record({ actor: subject, action: 'change_password', resource: '/auth/change-password', result: 'allow' });
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Could not change password. Try again.' });
   }
 });
 

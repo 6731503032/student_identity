@@ -152,3 +152,20 @@ pre.out { background: var(--bg); border: 1px solid var(--line); border-radius: 8
   .pf-grid { grid-template-columns: 1fr; }
 }
 .pf-title .mono, .pf-grid .mono { font-size: inherit; }
+
+/* user menu */
+.usermenu { position: relative; }
+.userbtn { font: inherit; display: flex; align-items: center; gap: 8px; background: transparent; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+.userbtn:hover, .userbtn[aria-expanded="true"] { border-color: var(--muted); }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 210px; z-index: 10; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; padding: 6px; box-shadow: 0 8px 24px rgb(0 0 0 / .14); }
+.menu a, .menu button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--ink); font: inherit; font-size: 14px; text-decoration: none; cursor: pointer; text-align: left; }
+.menu a:hover, .menu button:hover, .menu a:focus-visible, .menu button:focus-visible { background: var(--bg); outline: none; }
+.menu a.active { color: var(--accent); }
+.menu svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.menu a:not([hidden]) ~ #logout { border-top: 1px solid var(--line); border-radius: 0 0 7px 7px; margin-top: 4px; padding-top: 11px; }
+.card.narrow { max-width: 480px; }
+.card.narrow form { display: grid; gap: 12px; margin-top: 16px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }

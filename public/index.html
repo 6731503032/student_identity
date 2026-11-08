@@ -63,9 +63,20 @@
       <div class="brand"><span class="mark">SI</span><b>Student Identity</b></div>
       <nav id="nav"></nav>
       <div class="who">
-        <span id="whoText"></span>
         <span id="ttl" class="ttl"></span>
-        <button class="btn ghost sm" id="logout">Sign out</button>
+        <div class="usermenu">
+          <button type="button" id="userBtn" class="userbtn" aria-haspopup="menu" aria-expanded="false">
+            <span id="whoText"></span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+          <div id="userMenu" class="menu" role="menu" hidden>
+            <a href="#/profile" role="menuitem" data-needs="record">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="3.2"/><path d="M3.5 17c.8-3.3 3.4-5 6.5-5s5.7 1.7 6.5 5"/></svg>My profile</a>
+            <a href="#/password" role="menuitem" data-needs="record">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/></svg>Change password</a>
+            <button type="button" role="menuitem" id="logout">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M12 6.5 15.5 10 12 13.5M15.5 10H8"/></svg>Sign out</button>
+          </div>
+        </div>
       </div>
     </header>
     <section id="view" class="view"></section>

@@ -26,6 +26,7 @@ Digital Campus service (Pod 1: Identity & Academic Core).
 |---|---|
 | Not signed in | **Sign in** (student ID + password) · **Create account** · Dev shortcuts (staff / instructor / service, no password) |
 | Student | **My profile** (registrar-style card, edit, completeness) · **Consent** (allow/stop sharing with each service) · Tools |
+| Anyone with a student record | User menu (top-right): **My profile** · **Change password** · Sign out — staff/instructors promoted from a student account keep these |
 | Staff | Students (add / view / delete) · **Roles** (look up and assign) · Service clients (register, API keys) · Tools |
 | Instructor | Students (read-only) · Roles (read-only) · Tools |
 | Service | Claims lookup · Tools |
@@ -98,6 +99,7 @@ Other teams' backends send `X-API-Key: sik_…` (issued on the Service clients s
 | Method | Path | Who |
 |---|---|---|
 | POST | `/auth/signup`, `/auth/login` | public |
+| POST | `/auth/change-password` | signed in — `{ currentPassword, newPassword }`; `204`, or `400` if the current password is wrong |
 | GET | `/me/profile-completeness` | signed in |
 | GET · PUT · DELETE | `/me/consents`, `/me/consents/{serviceName}` | student |
 | GET · PUT | `/roles`, `/roles/{subject}` | staff (instructor: GET only) |
@@ -147,7 +149,7 @@ middleware and validation.
 
 | # | PRD test | What it proves |
 |---|---|---|
-| 1 | sign-in | Sign-up returns a working token; password is hashed; wrong password → 401; duplicate → 409 |
+| 1 | sign-in | Sign-up returns a working token; password is hashed; wrong password → 401; change password works and the old one stops; duplicate → 409 |
 | 2 | role check | Student can't create students (403), staff can (201); instructor can't delete; assigned role appears in the next token |
 | 3 | consent grant/revoke | Claims 403 → grant → 200 → revoke → 403; unknown scope → 400 |
 | 4 | token expiry | Expired, tampered and missing tokens → 401; `/tokens/verify` → `valid: false` |

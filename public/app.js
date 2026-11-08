@@ -114,11 +114,25 @@ $('#devForm').onsubmit = (e) => {
   const f = e.target, role = f.role.value;
   devSignIn({ sub: f.sub.value.trim(), role, scopes: role === 'service' ? ['profile:read'] : [] });
 };
-$('#logout').onclick = () => signOut();
+$('#logout').onclick = () => { closeMenu(); signOut(); };
+
+// user menu (top-right)
+const userBtn = $('#userBtn'), userMenu = $('#userMenu');
+function closeMenu() { userMenu.hidden = true; userBtn.setAttribute('aria-expanded', 'false'); }
+userBtn.onclick = (e) => {
+  e.stopPropagation();
+  const open = userMenu.hidden;
+  userMenu.hidden = !open; userBtn.setAttribute('aria-expanded', String(open));
+  if (open) userMenu.querySelector('a:not([hidden]), button').focus();
+};
+userMenu.onclick = (e) => { if (e.target.closest('a')) closeMenu(); };
+document.addEventListener('click', (e) => { if (!e.target.closest('.usermenu')) closeMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !userMenu.hidden) { closeMenu(); userBtn.focus(); } });
 
 // ---------- routes ----------
 const ROUTES = {
-  profile:  { label: 'My profile',      roles: ['student'],               render: viewProfile },
+  profile:  { label: 'My profile',      roles: ['student'],               render: viewProfile, ifRecord: true, inMenu: true },
+  password: { label: 'Change password', roles: ['student'],               render: viewPassword, ifRecord: true, inMenu: true },
   consent:  { label: 'Consent',         roles: ['student'],               render: viewConsent },
   students: { label: 'Students',        roles: ['staff', 'instructor'],   render: viewStudents },
   roles:    { label: 'Roles',           roles: ['staff', 'instructor'],   render: viewRoles },
@@ -126,24 +140,38 @@ const ROUTES = {
   claims:   { label: 'Claims',          roles: ['service'],               render: viewClaims },
   tools:    { label: 'Tools',           roles: ['student', 'staff', 'instructor', 'service'], render: viewTools },
 };
-const allowed = () => Object.entries(ROUTES).filter(([, r]) => r.roles.includes(session.role));
+// Staff/instructors who also have a student record (e.g. a student promoted on
+// the Roles screen) still get their own profile page.
+let hasRecord = false, booting = false;
+const allowed = () => Object.entries(ROUTES).filter(([, r]) => r.roles.includes(session.role) || (r.ifRecord && hasRecord));
 
-function boot() {
+async function boot() {
   const authed = session && session.exp * 1000 > Date.now();
   if (!authed && session) saveSession(null);
   $('#login').hidden = !!authed;
   $('#app').hidden = !authed;
   if (!authed) { showTab('signin'); return; }
   $('#whoText').innerHTML = `<b>${esc(session.sub)}</b> <span class="badge accent">${esc(session.role)}</span>`;
+  hasRecord = false;
+  if (session.role === 'staff' || session.role === 'instructor') {
+    booting = true; // don't render a page until we know which tabs exist
+    try { hasRecord = (await api('GET', '/me')).ok; } finally { booting = false; }
+  }
+  const own = session.role === 'student' || hasRecord;
+  userMenu.querySelectorAll('[data-needs="record"]').forEach((a) => (a.hidden = !own));
   route();
 }
 
 function route() {
-  if (!session) return;
+  if (!session || booting) return;
   const list = allowed();
-  let key = location.hash.slice(2) || list[0][0];
-  if (!list.some(([k]) => k === key)) key = list[0][0];
-  $('#nav').innerHTML = list.map(([k, r]) => `<a href="#/${k}" class="${k === key ? 'active' : ''}">${r.label}</a>`).join('');
+  const home = list.some(([k]) => k === 'profile') ? 'profile' : list.find(([, r]) => !r.inMenu)[0];
+  let key = location.hash.slice(2) || home;
+  if (!list.some(([k]) => k === key)) key = home;
+  // Profile and password live in the user menu, not the top nav.
+  $('#nav').innerHTML = list.filter(([, r]) => !r.inMenu)
+    .map(([k, r]) => `<a href="#/${k}" class="${k === key ? 'active' : ''}">${r.label}</a>`).join('');
+  userMenu.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#/${key}`));
   ROUTES[key].render($('#view'));
 }
 window.addEventListener('hashchange', route);
@@ -237,6 +265,35 @@ async function viewProfile(el) {
       loadCompleteness();
     };
   }
+}
+
+function viewPassword(el) {
+  el.innerHTML = `<div class="card narrow"><h2>Change password</h2><p class="sub">Use at least 8 characters. You'll stay signed in.</p>
+    <form id="pwForm" novalidate>
+      <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required><small class="ferr" data-f="currentPassword"></small></label>
+      <label>New password<input name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small class="ferr" data-f="newPassword"></small></label>
+      <label>Confirm new password<input name="confirm" type="password" autocomplete="new-password" required><small class="ferr" data-f="confirm"></small></label>
+      <div class="row"><button class="btn primary" type="submit">Change password</button><a class="btn" href="#/profile">Cancel</a></div>
+      <p class="err" data-err></p>
+    </form></div>`;
+  const f = $('#pwForm');
+  f.currentPassword.focus();
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const fields = {};
+    if (!f.currentPassword.value) fields.currentPassword = 'Required';
+    if (f.newPassword.value.length < 8) fields.newPassword = 'At least 8 characters';
+    else if (f.newPassword.value === f.currentPassword.value) fields.newPassword = 'Must be different from the current password';
+    if (f.confirm.value !== f.newPassword.value) fields.confirm = 'Passwords do not match';
+    showFieldErrors(f, fields);
+    if (Object.keys(fields).length) return;
+    busy(f, true);
+    const r = await api('POST', '/auth/change-password', { currentPassword: f.currentPassword.value, newPassword: f.newPassword.value });
+    busy(f, false);
+    if (!r.ok) { showFieldErrors(f, r.data?.fields || {}); return (f.querySelector('[data-err]').textContent = r.data?.fields ? '' : errMsg(r)); }
+    f.reset(); toast('Password changed');
+    location.hash = '#/profile';
+  };
 }
 
 async function loadCompleteness() {
