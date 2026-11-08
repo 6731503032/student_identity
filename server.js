@@ -14,6 +14,8 @@ if (process.env.NODE_ENV !== 'production') {
   app.use('/', require('./routes/dev'));
   app.use('/', require('./routes/mock-receivers'));
 }
+// Health check — pinged by an uptime monitor so Render's free tier doesn't sleep
+app.get('/health', (req, res) => res.send('ok'));
 
 // Fallback for anything not in the PRD's REST list
 app.use((req, res) => {
