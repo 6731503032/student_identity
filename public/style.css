@@ -62,14 +62,6 @@ label.scope small { display: block; color: var(--muted); font-size: 12.5px; }
 .hintline { color: var(--muted); }
 .hintline.bad { color: var(--bad); }
 input[aria-invalid] { border-color: var(--bad); }
-details.dev { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; }
-details.dev summary { cursor: pointer; color: var(--muted); }
-details.dev .hint { margin: 10px 0; }
-details.dev form { margin-top: 12px; }
-.presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
-.presets button { font: inherit; font-size: 12.5px; border: 1px solid var(--line); background: transparent; color: var(--ink);
-  border-radius: 999px; padding: 3px 10px; cursor: pointer; }
-.presets button:hover { border-color: var(--accent); color: var(--accent); }
 .hint { color: var(--muted); font-size: 12.5px; margin: 0; }
 
 /* shell */

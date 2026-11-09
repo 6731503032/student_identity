@@ -51,21 +51,6 @@
         <p class="err" data-err></p>
       </form>
 
-      <details class="dev">
-        <summary>Dev shortcuts</summary>
-        <p class="hint">Sign in without a password as any role, via the dev-only <code>POST /dev/issue-token</code>. Use this for staff, instructor and service testing.</p>
-        <div class="presets">
-          <button type="button" data-preset='{"sub":"staff-1","role":"staff"}'>Staff</button>
-          <button type="button" data-preset='{"sub":"instructor-1","role":"instructor"}'>Instructor</button>
-          <button type="button" data-preset='{"sub":"internship-service","role":"service","scopes":["profile:read"]}'>Service</button>
-        </div>
-        <form id="devForm" class="row">
-          <label>Subject<input name="sub" required placeholder="other-service" autocomplete="off"></label>
-          <label style="flex:0 0 130px">Role<select name="role"><option>student</option><option>staff</option><option>instructor</option><option>service</option></select></label>
-          <button class="btn" type="submit">Go</button>
-        </form>
-        <p class="err" id="devErr"></p>
-      </details>
     </div>
     </div>
   </main>

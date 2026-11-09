@@ -107,19 +107,6 @@ function showFieldErrors(form, fields) {
   });
 }
 
-// dev shortcuts (no password; dev-only endpoint)
-async function devSignIn(payload) {
-  const r = await api('POST', '/dev/issue-token', payload);
-  if (!r.ok) return ($('#devErr').textContent = r.status === 404 ? 'Dev sign-in is disabled on this server' : errMsg(r));
-  $('#devErr').textContent = '';
-  startSession(r.data.token);
-}
-document.querySelectorAll('[data-preset]').forEach((b) => (b.onclick = () => devSignIn(JSON.parse(b.dataset.preset))));
-$('#devForm').onsubmit = (e) => {
-  e.preventDefault();
-  const f = e.target, role = f.role.value;
-  devSignIn({ sub: f.sub.value.trim(), role, scopes: role === 'service' ? ['profile:read'] : [] });
-};
 $('#logout').onclick = () => { closeMenu(); signOut(); };
 
 // user menu (top-right)

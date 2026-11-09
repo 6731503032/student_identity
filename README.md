@@ -24,7 +24,7 @@ Digital Campus service (Pod 1: Identity & Academic Core).
 
 | Who | Screens |
 |---|---|
-| Public | **Sign in / Create account** (opens at `/`) · **Forgot password** (staff reset — no email yet) · **Verify** (`#/v/<code>`, opened from the QR; shows only Valid / Currently enrolled) · Dev shortcuts |
+| Public | **Sign in / Create account** (opens at `/`) · **Forgot password** (staff reset — no email yet) · **Verify** (`#/v/<code>`, opened from the QR; shows only Valid / Currently enrolled) |
 | Student | **Dashboard** (verification, QR, today's classes, announcements, alerts) · **Courses** ★ (search, filter, detail, Register) · **Timetable** ★ · **Grades** ★ (GPA, CSV transcript, print) · **Consent** |
 | Anyone with a student record | User menu: **My profile** (photo, faculty, edit, completeness) · **Settings** (password, privacy, alert preferences) · Sign out |
 | Staff | **Dashboard** (counts, connected services, announcements) · **Users** (search, suspend/reactivate, reset password) · Students · Roles · **Courses** ★ (read-only synced view) · Service clients · **Audit log** (filter who did what) |
@@ -76,7 +76,7 @@ npm test               # no Supabase or internet needed
 | `GRADES_URL` | no | Grades service base URL |
 | `PUBLIC_URL` | no | Base URL put in verify QR codes. Default: the request's host |
 | `PORT` | no | Default `3000` (Render sets it) |
-| `NODE_ENV` | no | `production` **disables** dev routes, including Dev shortcuts on the sign-in page |
+| `NODE_ENV` | no | `production` **disables** dev routes (`/dev/*`, including `/dev/issue-token` and break/fix AI) |
 
 Never commit `.env` — it is in `.gitignore`.
 
@@ -231,7 +231,7 @@ webhook; alert preferences filter alerts.
 ## Deploy (Render)
 
 1. Web Service from this repo — Build `npm install`, Start `npm start`.
-2. Set the environment variables above (not `NODE_ENV=production` if you need Dev shortcuts for demos).
+2. Set the environment variables above (not `NODE_ENV=production` while you still need `/dev/break-ai` or `/dev/issue-token` for demos).
 3. Run any new migration in Supabase **before** deploying code that uses it.
 4. Push, then **Manual Deploy → Deploy latest commit** (auto-deploy is off).
 5. Free tier sleeps after ~15 min idle: an UptimeRobot HTTP(s) monitor on
@@ -245,7 +245,7 @@ webhook; alert preferences filter alerts.
 - The AI completeness message is simulated, not a real model call.
 - `skills` in claims is always empty — Identity doesn't store skills yet.
 - RLS is off on the Supabase tables. Use a secret `SUPABASE_KEY` on Render and enable RLS before real use.
-- Staff and instructor accounts have no self sign-up; promote a student account on the Roles screen, or use Dev shortcuts.
+- Staff and instructor accounts have no self sign-up; a student signs up, then staff promote the account on the Roles screen. For a first staff account, mint a token with `POST /dev/issue-token` (dev only).
 - Forgot password and email verification need an email service (e.g. Resend); for now staff reset passwords on the Users screen.
 - No team in Pod 1 owns grades yet, so Grades stays "not connected" until a `GRADES_URL` exists.
 - Profile photos are stored as small JPEG data URLs in `students.photo` (resized in the browser, max ~150 KB), not in object storage.
