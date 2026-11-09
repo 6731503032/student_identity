@@ -100,6 +100,21 @@ router.post('/auth/login', async (req, res) => {
   }
 });
 
+// POST /auth/refresh — swap a still-valid token for a fresh one (keeps an
+// active user signed in). Only for sign-in accounts; re-reads the role and
+// refuses suspended accounts, so changes apply within one refresh.
+router.post('/auth/refresh', authenticate, async (req, res) => {
+  try {
+    const account = await accounts.get(req.user.sub);
+    if (!account) return res.status(404).json({ error: 'This session cannot be refreshed — sign in again' });
+    const out = await tokenFor(req.user.sub);
+    audit.record({ actor: req.user.sub, action: 'refresh_token', resource: '/auth/refresh', result: `allow:${out.role}` });
+    res.status(200).json(out);
+  } catch (err) {
+    res.status(500).json({ error: 'Could not refresh the session' });
+  }
+});
+
 // POST /auth/change-password — signed-in user changes their own password
 router.post('/auth/change-password', authenticate, async (req, res) => {
   const subject = req.user.sub;

@@ -121,6 +121,7 @@ Other teams' backends send `X-API-Key: sik_…` (issued on the Service clients s
 | Method | Path | Who |
 |---|---|---|
 | POST | `/auth/signup`, `/auth/login` | public |
+| POST | `/auth/refresh` | signed in (accounts only) — new 15-min token with the current role; the page calls it while the user is active, so idle sessions end after ~15 min |
 | POST | `/auth/change-password` | signed in — `{ currentPassword, newPassword }`; `204`, or `400` if the current password is wrong |
 | GET | `/me/profile-completeness` | signed in |
 | GET · PUT · DELETE | `/me/consents`, `/me/consents/{serviceName}` | student |

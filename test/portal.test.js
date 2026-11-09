@@ -89,6 +89,21 @@ describe('suspension & staff password reset', () => {
   });
 });
 
+describe('session refresh', () => {
+  test('active users get a fresh token with their current role; suspended and non-accounts cannot refresh', async () => {
+    const t = await signup();
+    await api('PUT', '/roles/6731503029', { token: staff(), body: { role: 'instructor' } });
+    const r = await api('POST', '/auth/refresh', { token: t });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.role, 'instructor', 'role change applies at the next refresh');
+    assert.equal((await api('POST', '/tokens/verify', { body: { token: r.body.token } })).body.role, 'instructor');
+    assert.equal((await api('POST', '/auth/refresh', { token: staff() })).status, 404, 'dev tokens without an account just expire');
+    assert.equal((await api('POST', '/auth/refresh', { token: token('6731503029', 'student', [], { expiresIn: -5 }) })).status, 401);
+    await api('POST', '/admin/users/6731503029/suspend', { token: staff() });
+    assert.equal((await api('POST', '/auth/refresh', { token: r.body.token })).status, 403);
+  });
+});
+
 describe('public verify (QR)', () => {
   test('code shows only valid/enrolled; forged codes fail; suspended is invalid', async () => {
     await signup();

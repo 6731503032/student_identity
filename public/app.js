@@ -170,7 +170,7 @@ function showPublic(which, param) {
 // Header: photo (or initials), student ID, name, role.
 function paintWho() {
   const name = me ? [me.first_name, me.last_name].filter(Boolean).join(' ') : '';
-  $('#whoText').innerHTML = `<span class="who-id">${esc(session.sub)}</span>${name ? `<span class="who-name">${esc(name)}</span>` : ''}<span class="badge accent">${esc(session.role)}</span>`;
+  $('#whoText').innerHTML = `<span class="who-id">${esc(session.sub)}</span><span class="who-name">${name ? esc(name) : ''} <span class="badge accent">${esc(session.role)}</span></span>`;
   const initials = name ? name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('') : session.sub.slice(0, 2);
   $('#whoAvatar').innerHTML = me && me.photo ? `<img src="${esc(me.photo)}" alt="">` : esc(initials.toUpperCase());
 }
@@ -262,15 +262,31 @@ window.addEventListener('hashchange', () => {
   if (key === 'v' || !session || !shellReady) boot(); else route();
 });
 
+// Session: tokens last 15 min. While the user is active, swap the token for a
+// fresh one shortly before it expires; after 15 idle minutes, let it lapse.
+let lastActivity = Date.now(), refreshing = false;
+['click', 'keydown', 'scroll', 'touchstart'].forEach((ev) =>
+  document.addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true, capture: true }));
+
+async function refreshSession() {
+  if (refreshing || !session) return;
+  refreshing = true;
+  try {
+    const r = await api('POST', '/auth/refresh');
+    if (!r.ok || !session) return;
+    const p = decode(r.data.token);
+    const roleChanged = p.role !== session.role;
+    saveSession({ token: r.data.token, sub: p.sub, role: p.role, scopes: p.scopes || [], exp: p.exp });
+    if (roleChanged) { toast(`Your role is now ${p.role}`); go(location.hash || '#/'); }
+  } finally { refreshing = false; }
+}
+
 setInterval(() => {
   if (!session) return;
-  const left = Math.round(session.exp - Date.now() / 1000);
-  if (left <= 0) { toast('Token expired — sign in again'); return signOut(true); }
-  const el = $('#ttl');
-  el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
-  el.classList.toggle('low', left < 120);
-  el.title = 'Token time left';
-}, 1000);
+  const left = session.exp - Date.now() / 1000;
+  if (left <= 0) { toast('Signed out after 15 minutes of inactivity'); return signOut(true); }
+  if (left < 180 && Date.now() - lastActivity < 15 * 60 * 1000) refreshSession();
+}, 15000);
 
 // ---------- views ----------
 async function loadCompleteness() {
