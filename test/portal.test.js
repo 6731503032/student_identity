@@ -28,7 +28,7 @@ before(async () => {
           { id: 'crs_02', code: 'CS-201', title: 'Data Structures', description: '', status: 'draft', credits: 3, level: 'intermediate', department: 'Computing', instructorIds: [] },
         ];
         if (u.pathname === '/t2/v1/courses') { mock.lastLimit = u.searchParams.get('limit'); return send(200, { data: t2, page: 1, limit: 100, total: 2 }); }
-        if (u.pathname === '/t2/v1/courses/crs_01') return send(200, { ...t2[0], instructors: [{ id: 'ins_1', name: 'Dr. Lee' }], prerequisites: [{ courseId: 'crs_00', code: 'MA-100' }] });
+        if (u.pathname === '/t2/v1/courses/crs_01') return send(200, { ...t2[0], instructors: [{ id: 'ins_1', displayName: 'Dr. Lee' }], prerequisites: [{ courseId: 'crs_02', required: true, minimumGrade: 60 }] });
         return send(404, { error: 'not found' });
       }
       if (u.pathname === '/courses') {
@@ -213,7 +213,7 @@ describe('Team 02 course catalog shape', () => {
       assert.deepEqual(staffView.body.courses.map((c) => [c.code, c.status, c.faculty]), [['CS-101', 'published', 'Computing'], ['CS-201', 'draft', 'Computing']]);
       const d = await api('GET', '/catalog/courses/CS-101', { token: t });
       assert.equal(d.status, 200, 'looked up by code even though their detail path uses crs_ ids');
-      assert.deepEqual([d.body.course.instructor, d.body.course.prerequisites, d.body.course.level], ['Dr. Lee', ['MA-100'], 'introductory']);
+      assert.deepEqual([d.body.course.instructor, d.body.course.prerequisites, d.body.course.level], ['Dr. Lee', ['CS-201'], 'introductory'], 'crs_ prerequisite ids shown as course codes');
       assert.equal((await api('GET', '/catalog/courses/CS-999', { token: t })).status, 404);
     } finally { delete process.env.COURSE_CATALOG_TOKEN; }
   });

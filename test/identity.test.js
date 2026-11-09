@@ -199,5 +199,10 @@ describe('8. service API key (extra)', () => {
     assert.equal(rotated.status, 201);
     assert.equal((await claims()).status, 401, 'old key stops working after rotation');
     assert.equal((await api('GET', `/students/${STUDENT}/claims`, { headers: { 'X-API-Key': rotated.body.apiKey } })).status, 200);
+
+    assert.equal((await api('DELETE', `/service-clients/${created.body.id}`, { token: token(STUDENT, 'student') })).status, 403);
+    assert.equal((await api('DELETE', `/service-clients/${created.body.id}`, { token: token('staff-1', 'staff') })).status, 204);
+    assert.equal((await api('GET', `/students/${STUDENT}/claims`, { headers: { 'X-API-Key': rotated.body.apiKey } })).status, 401, 'deleted client key stops working');
+    assert.equal((await api('DELETE', `/service-clients/${created.body.id}`, { token: token('staff-1', 'staff') })).status, 404);
   });
 });

@@ -130,6 +130,7 @@ Other teams' backends send `X-API-Key: sik_…` (issued on the Service clients s
 | GET · POST · DELETE | `/students`, `/students/{id}` | staff (instructor: GET) |
 | GET | `/service-clients/{id}/key` | staff — copy the key again |
 | POST | `/service-clients/{id}/keys` | staff — issue a new key (old one stops working) |
+| DELETE | `/service-clients/{id}` | staff — remove a client; its key stops working (students' consents to that name are kept) |
 | GET | `/health` | public — for the uptime monitor |
 | GET | `/me/verify-qr` · `/verify/{code}` | signed in · **public** (returns only `valid`, `enrolled`, `checkedAt`) |
 | GET · PUT | `/me/settings` | signed in — alert preferences |
@@ -169,7 +170,11 @@ Other teams' backends send `X-API-Key: sik_…` (issued on the Service clients s
   "… unavailable — try again".
 
 **Team 02 (Course Catalog) setup:** `COURSE_CATALOG_URL=https://course-catalog.taskflow-123.workers.dev/v1`
-and `COURSE_CATALOG_TOKEN=<service token from Team 02>` (their API rejects other tokens).
+and `COURSE_CATALOG_TOKEN=<service token from Team 02>` (their API only accepts its own
+HS256 JWTs with `iss=https://auth.course-catalog.dev`). Team 02 mints it **with their
+production secret**:
+`JWT_SECRET=<prod secret> npm run token:dev -- --role service --sub svc_student_identity --expires 15552000`
+(180 days; re-issue before it expires).
 
 | Page | Calls (default paths, override with env) |
 |---|---|

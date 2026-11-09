@@ -393,7 +393,8 @@ async function viewClients(el) {
         <td class="mono">${c.hasApiKey ? `${esc(c.key_prefix || 'sik_')}… ${c.canCopy ? `<button class="btn sm" data-copy="${esc(c.id)}" data-name="${esc(c.name)}">Copy</button>` : '<span class="sub" title="Created before keys could be copied again — issue a new key once">(can\'t copy)</span>'}` : '<span class="sub">none</span>'}</td>
         <td class="mono">${esc((c.scopes || []).join(', ') || '—')}</td>
         <td>${c.created_at ? esc(new Date(c.created_at).toLocaleString()) : '—'}</td>
-        <td class="actions"><button class="btn sm" data-rot="${esc(c.id)}" data-name="${esc(c.name)}">${c.hasApiKey ? 'New key' : 'Create key'}</button></td></tr>`).join('')}</tbody></table>`;
+        <td class="actions"><button class="btn sm" data-rot="${esc(c.id)}" data-name="${esc(c.name)}">${c.hasApiKey ? 'New key' : 'Create key'}</button>
+          <button class="btn sm danger" data-del="${esc(c.id)}" data-name="${esc(c.name)}">Delete</button></td></tr>`).join('')}</tbody></table>`;
   };
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -405,6 +406,14 @@ async function viewClients(el) {
     load();
   };
   $('#tbl').onclick = async (e) => {
+    if (e.target.dataset.del) {
+      const name = e.target.dataset.name;
+      if (!confirm(`Delete ${name}? Its API key stops working immediately. This can't be undone.`)) return;
+      const r = await api('DELETE', `/service-clients/${encodeURIComponent(e.target.dataset.del)}`);
+      if (!r.ok) return toast(errMsg(r));
+      $('#scOut').innerHTML = '';
+      toast(`Deleted ${name}`); return load();
+    }
     if (e.target.dataset.copy) {
       const r = await api('GET', `/service-clients/${encodeURIComponent(e.target.dataset.copy)}/key`);
       if (!r.ok) return toast(errMsg(r));

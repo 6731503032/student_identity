@@ -205,6 +205,18 @@ router.get('/service-clients/:id/key', authenticate, requireRole('staff'), async
   }
 });
 
+// DELETE /service-clients/:id — staff only; remove a client and revoke its key
+router.delete('/service-clients/:id', authenticate, requireRole('staff'), async (req, res) => {
+  try {
+    const removed = await serviceClients.remove(req.params.id);
+    if (!removed) return res.status(404).json({ error: 'Service client not found' });
+    audit.record({ actor: req.user.sub, action: 'delete_service_client', resource: `/service-clients/${req.params.id}`, result: `allow:${removed.name}` });
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete service client' });
+  }
+});
+
 // POST /service-clients/:id/keys — staff only; issue a new API key (old one stops working)
 router.post('/service-clients/:id/keys', authenticate, requireRole('staff'), async (req, res) => {
   try {
