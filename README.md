@@ -24,14 +24,25 @@ Digital Campus service (Pod 1: Identity & Academic Core).
 
 | Who | Screens |
 |---|---|
-| Not signed in | **Sign in** (student ID + password) · **Create account** · Dev shortcuts (staff / instructor / service, no password) |
-| Student | **My profile** (registrar-style card, edit, completeness) · **Consent** (allow/stop sharing with each service) · Tools |
-| Anyone with a student record | User menu (top-right): **My profile** · **Change password** · Sign out — staff/instructors promoted from a student account keep these |
-| Staff | Students (add / view / delete) · **Roles** (look up and assign) · Service clients (register, API keys) · Tools |
+| Public | **Sign in / Create account** (opens at `/`) · **Forgot password** (staff reset — no email yet) · **Verify** (`#/v/<code>`, opened from the QR; shows only Valid / Currently enrolled) · Dev shortcuts |
+| Student | **Dashboard** (verification, QR, today's classes, announcements, alerts) · **Courses** ★ (search, filter, detail, Register) · **Timetable** ★ · **Grades** ★ (GPA, CSV transcript, print) · **Consent** |
+| Anyone with a student record | User menu: **My profile** (photo, faculty, edit, completeness) · **Settings** (password, privacy, alert preferences) · Sign out |
+| Staff | **Dashboard** (counts, connected services, announcements) · **Users** (search, suspend/reactivate, reset password) · Students · Roles · **Courses** ★ (read-only synced view) · Service clients · **Audit log** (filter who did what) · Tools |
 | Instructor | Students (read-only) · Roles (read-only) · Tools |
 | Service | Claims lookup · Tools |
 
+Layout: a header (student ID, name, photo, user menu) and a **side menu** grouped into
+Student Menu / My Account / Staff Menu / Developer; groups collapse, and on phones the
+menu slides in from the hamburger button.
+
+★ = data owned by another team, fetched through our backend adapters (`lib/external.js`) — see
+[Pages that use other teams' data](#pages-that-use-other-teams-data).
+Every page has loading, empty and error states, plus 404 (unknown page) and 403 (wrong role).
 Tools: verify a token, and break/fix the AI dependency to demonstrate the fallback.
+
+> **Scope note.** The PRD asks for 3 screens. The portal pages above were added on the
+> team's request (2026-11-09). Courses / Timetable / Grades / Synced courses depend on
+> other teams' APIs and show "not connected yet" until their URLs are set.
 
 ---
 
@@ -55,6 +66,11 @@ npm test               # no Supabase or internet needed
 | `NOTIFICATION_HUB_URL` | yes | Notification Hub webhook URL |
 | `DATA_ANALYTICS_URL` | yes | Data & Analytics webhook URL |
 | `ALLOWED_ORIGINS` | no | CORS origins, comma-separated. Default `*` |
+| `COURSE_CATALOG_URL` | no | Course Catalog base URL (courses, course detail, sections) |
+| `ENROLLMENT_URL` | no | Enrollment base URL (register, "currently enrolled" on the verify page) |
+| `TIMETABLE_URL` | no | Timetable & Room base URL |
+| `GRADES_URL` | no | Grades service base URL |
+| `PUBLIC_URL` | no | Base URL put in verify QR codes. Default: the request's host |
 | `PORT` | no | Default `3000` (Render sets it) |
 | `NODE_ENV` | no | `production` **disables** dev routes, including Dev shortcuts on the sign-in page |
 
@@ -69,9 +85,11 @@ supabase/migrations/20261107120000_create_roles.sql
 supabase/migrations/20261107140000_create_accounts.sql
 supabase/migrations/20261107150000_service_client_api_keys.sql
 supabase/migrations/20261107160000_service_client_key_enc.sql
+supabase/migrations/20261109120000_portal_pages.sql
 ```
 
-Tables: `students`, `roles`, `accounts`, `consents`, `service_clients`, `audit_events`.
+Tables: `students`, `roles`, `accounts`, `consents`, `service_clients`, `audit_events`,
+`announcements`, `notifications`.
 
 ---
 
@@ -107,11 +125,50 @@ Other teams' backends send `X-API-Key: sik_…` (issued on the Service clients s
 | GET | `/service-clients/{id}/key` | staff — copy the key again |
 | POST | `/service-clients/{id}/keys` | staff — issue a new key (old one stops working) |
 | GET | `/health` | public — for the uptime monitor |
+| GET | `/me/verify-qr` · `/verify/{code}` | signed in · **public** (returns only `valid`, `enrolled`, `checkedAt`) |
+| GET · PUT | `/me/settings` | signed in — alert preferences |
+| GET · POST | `/me/notifications`, `/me/notifications/read` | signed in |
+| GET · POST · DELETE | `/announcements`, `/announcements/{id}` | read: signed in · write: staff |
+| GET | `/catalog/courses`, `/catalog/courses/{code}` | signed in ★ |
+| POST | `/catalog/courses/{code}/register` | student ★ — `409` if Enrollment rejects |
+| GET | `/me/timetable`, `/me/grades` | signed in ★ |
+| GET | `/admin/stats`, `/admin/users`, `/admin/audit`, `/admin/courses` ★ | staff |
+| POST | `/admin/users/{subject}/suspend` · `/reactivate` · `/reset-password` | staff |
+| GET | `/integrations` | signed in — which external services are connected |
+
+★ calls another team's API. Failures come back as `503 { code: "service_not_configured" | "service_unavailable", service }`.
 
 ### Dev-only (off when `NODE_ENV=production`)
 
 `POST /dev/issue-token` · `GET /dev/service-clients` · `POST /dev/break-ai` ·
 `POST /dev/fix-ai` · `POST /mock/notification-hub` · `POST /mock/data-analytics`
+
+---
+
+## Pages that use other teams' data
+
+`lib/external.js` is the only place that talks to other teams. It:
+
+- reads the base URLs above (unset = "not connected yet");
+- forwards the signed-in user's Identity token as `Authorization: Bearer`, so
+  their service can check it with `POST /tokens/verify`;
+- accepts the common response shapes (`[...]`, `{ courses: [...] }`,
+  `courseCode`/`code`, `name`/`title`, `seatsLeft` or `capacity - enrolled`, …) and
+  normalises them;
+- times out after 20 s and turns errors into `503`, which the UI shows as
+  "… unavailable — try again".
+
+| Page | Calls (default paths, override with env) |
+|---|---|
+| Courses, Synced courses | `GET {COURSE_CATALOG_URL}/courses`, `/courses/{code}`, `/courses/{code}/sections` |
+| Register button | `POST {ENROLLMENT_URL}/enrollments` `{ studentId, courseCode, section }` → `{ status }` |
+| Verify page "enrolled" | `GET {ENROLLMENT_URL}/students/{studentId}/enrollments` → `{ enrolled }` or a list |
+| Timetable, Today's classes | `GET {TIMETABLE_URL}/timetable/{studentId}` → `[{ courseCode, day, start, end, room }]` |
+| Grades | `GET {GRADES_URL}/grades/{studentId}` → `[{ term, courseCode, credits, grade }]` (GPA computed here, S/U not counted) |
+
+Path overrides: `COURSE_CATALOG_COURSES_PATH`, `COURSE_CATALOG_COURSE_PATH`,
+`COURSE_CATALOG_SECTIONS_PATH`, `ENROLLMENT_REGISTER_PATH`, `ENROLLMENT_STATUS_PATH`,
+`TIMETABLE_PATH`, `GRADES_PATH` (`{code}` and `{studentId}` are filled in).
 
 ---
 
@@ -158,6 +215,13 @@ middleware and validation.
 | 7 | audit event | Denied and allowed claims, consent grant and failed sign-in are all audited |
 | 8 | service API key | Key works only with consent; staff can copy it again; bad or rotated key → 401 |
 
+`test/portal.test.js` (13 more) covers the portal pages against a mock of the other
+teams' APIs: suspension blocks sign-in, tokens and `/tokens/verify`; staff reset;
+verify codes can't be forged and leak nothing; not-connected and down → 503;
+course normalisation; registration forwards the token and creates alerts; timetable
+days; GPA; admin APIs are staff-only; announcements; photo never reaches the
+webhook; alert preferences filter alerts.
+
 ---
 
 ## Deploy (Render)
@@ -178,4 +242,7 @@ middleware and validation.
 - `skills` in claims is always empty — Identity doesn't store skills yet.
 - RLS is off on the Supabase tables. Use a secret `SUPABASE_KEY` on Render and enable RLS before real use.
 - Staff and instructor accounts have no self sign-up; promote a student account on the Roles screen, or use Dev shortcuts.
+- Forgot password and email verification need an email service (e.g. Resend); for now staff reset passwords on the Users screen.
+- No team in Pod 1 owns grades yet, so Grades stays "not connected" until a `GRADES_URL` exists.
+- Profile photos are stored as small JPEG data URLs in `students.photo` (resized in the browser, max ~150 KB), not in object storage.
 - Dev routes are on in the deployed demo, so anyone with the URL can mint a staff token. Set `NODE_ENV=production` after grading.

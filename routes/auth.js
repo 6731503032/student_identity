@@ -32,6 +32,7 @@ router.post('/auth/signup', async (req, res) => {
   const lastName = String(body.lastName || '').trim();
   const email = String(body.email || '').trim().toLowerCase();
   const password = String(body.password || '');
+  const faculty = String(body.faculty || '').trim();
 
   const errors = {};
   if (!STUDENT_ID.test(studentId)) errors.studentId = 'Student ID must be 10 digits';
@@ -39,6 +40,7 @@ router.post('/auth/signup', async (req, res) => {
   if (!lastName || lastName.length > 100) errors.lastName = 'Last name is required';
   if (!EMAIL.test(email)) errors.email = 'Enter a valid email address';
   if (password.length < MIN_PASSWORD) errors.password = `Password must be at least ${MIN_PASSWORD} characters`;
+  if (faculty.length > 120) errors.faculty = 'Faculty must be at most 120 characters';
   if (Object.keys(errors).length) {
     audit.record({ actor: studentId || 'unknown', action: 'signup', resource: '/auth/signup', result: 'deny:validation' });
     return res.status(400).json({ error: 'Please fix the highlighted fields', fields: errors });
@@ -61,6 +63,7 @@ router.post('/auth/signup', async (req, res) => {
     if (!existing) {
       try {
         await studentsDb.createStudent({ studentId, firstName, lastName, email });
+        if (faculty) await studentsDb.updateStudent(studentId, { faculty });
       } catch (e) {
         audit.record({ actor: studentId, action: 'signup', resource: '/auth/signup', result: 'deny:email_taken' });
         return res.status(409).json({ error: 'This email is already used by another student.' });
@@ -84,6 +87,10 @@ router.post('/auth/login', async (req, res) => {
     if (!account || !accounts.verifyPassword(password, account.password_hash)) {
       audit.record({ actor: studentId || 'unknown', action: 'login', resource: '/auth/login', result: 'deny:bad_credentials' });
       return res.status(401).json({ error: 'Wrong student ID or password' });
+    }
+    if (account.suspended_at) {
+      audit.record({ actor: studentId, action: 'login', resource: '/auth/login', result: 'deny:suspended' });
+      return res.status(403).json({ error: 'This account is suspended. Contact staff.', code: 'suspended' });
     }
     const out = await tokenFor(studentId);
     audit.record({ actor: studentId, action: 'login', resource: '/auth/login', result: `allow:${out.role}` });

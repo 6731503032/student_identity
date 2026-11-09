@@ -23,11 +23,20 @@ async function authenticate(req, res, next) {
   }
   try {
     req.user = verifyToken(token); // { sub, role, scopes, iat, exp }
-    next();
   } catch (err) {
     audit.record({ actor: 'unknown', action: 'authenticate', resource: req.originalUrl, result: 'deny:invalid_token' });
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  // Suspended accounts lose access immediately, not only at the next sign-in.
+  if (req.user.role !== 'service') {
+    let suspended = false;
+    try { suspended = await require('../lib/portal').isSuspended(req.user.sub); } catch (e) { /* fail open on DB hiccup */ }
+    if (suspended) {
+      audit.record({ actor: req.user.sub, action: 'authenticate', resource: req.originalUrl, result: 'deny:suspended' });
+      return res.status(403).json({ error: 'This account is suspended. Contact staff.', code: 'suspended' });
+    }
+  }
+  next();
 }
 
 function requireRole(...roles) {

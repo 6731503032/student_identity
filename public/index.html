@@ -9,10 +9,13 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Sign in / Sign up -->
-  <main id="login" class="login" hidden>
+  <!-- Public: sign in / sign up, forgot password, QR verify -->
+  <main id="public" hidden>
+    <section id="verifyView" class="verify-wrap" hidden></section>
+
+    <div id="auth" class="login" hidden>
     <div class="login-card">
-      <div class="brand"><span class="mark">SI</span><div><b>Student Identity</b><small>Team 01 · Platform service</small></div></div>
+      <a class="brand" href="#/"><span class="mark">SI</span><div><b>Student Identity</b><small>Team 01 · Platform service</small></div></a>
 
       <div class="tabs" role="tablist">
         <button type="button" role="tab" data-tab="signin" class="active">Sign in</button>
@@ -24,7 +27,15 @@
         <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
         <button class="btn primary" type="submit">Sign in</button>
         <p class="err" data-err></p>
+        <a class="small-link" href="#/forgot">Forgot password?</a>
       </form>
+
+      <div data-pane="forgot" class="forgot" hidden>
+        <h3>Forgot your password?</h3>
+        <p>Ask a staff member to reset it. They'll give you a temporary password — sign in with it, then choose a new one in <b>Settings</b>.</p>
+        <p class="sub">We don't send reset emails yet.</p>
+        <a class="btn" href="#/signin">Back to sign in</a>
+      </div>
 
       <form id="signupForm" data-pane="signup" novalidate hidden>
         <label>Student ID<input name="studentId" inputmode="numeric" maxlength="10" autocomplete="username" required><small class="ferr" data-f="studentId"></small></label>
@@ -33,6 +44,7 @@
           <label>Last name<input name="lastName" autocomplete="family-name" required><small class="ferr" data-f="lastName"></small></label>
         </div>
         <label>Email<input name="email" type="email" autocomplete="email" required><small class="ferr" data-f="email"></small></label>
+        <label>Faculty / School <span class="opt">optional</span><input name="faculty" autocomplete="organization" maxlength="120"><small class="ferr" data-f="faculty"></small></label>
         <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required><small class="hintline" data-f="password">At least 8 characters</small></label>
         <label>Confirm password<input name="confirm" type="password" autocomplete="new-password" required><small class="ferr" data-f="confirm"></small></label>
         <button class="btn primary" type="submit">Create account</button>
@@ -55,34 +67,43 @@
         <p class="err" id="devErr"></p>
       </details>
     </div>
+    </div>
   </main>
 
-  <!-- App shell -->
+  <!-- App shell: header + side menu -->
   <div id="app" hidden>
     <header class="top">
-      <div class="brand"><span class="mark">SI</span><b>Student Identity</b></div>
-      <nav id="nav"></nav>
+      <button type="button" class="hamburger" id="navToggle" aria-label="Open menu" aria-controls="side" aria-expanded="false">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button>
+      <a class="brand" href="#/"><span class="mark">SI</span><span class="brand-text"><b>Student Identity</b><small>Digital Campus · Team 01</small></span></a>
       <div class="who">
         <span id="ttl" class="ttl"></span>
         <div class="usermenu">
           <button type="button" id="userBtn" class="userbtn" aria-haspopup="menu" aria-expanded="false">
-            <span id="whoText"></span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            <span id="whoAvatar" class="who-av"></span>
+            <span id="whoText" class="who-text"></span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
           </button>
           <div id="userMenu" class="menu" role="menu" hidden>
             <a href="#/profile" role="menuitem" data-needs="record">
               <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="3.2"/><path d="M3.5 17c.8-3.3 3.4-5 6.5-5s5.7 1.7 6.5 5"/></svg>My profile</a>
-            <a href="#/password" role="menuitem" data-needs="record">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/></svg>Change password</a>
+            <a href="#/settings" role="menuitem" data-needs="record">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></svg>Settings</a>
             <button type="button" role="menuitem" id="logout">
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M12 6.5 15.5 10 12 13.5M15.5 10H8"/></svg>Sign out</button>
           </div>
         </div>
       </div>
     </header>
-    <section id="view" class="view"></section>
+    <div class="shell">
+      <aside id="side" class="side" aria-label="Main menu"><nav id="nav"></nav></aside>
+      <div class="scrim" id="scrim" hidden></div>
+      <main class="main"><section id="view" class="view"></section></main>
+    </div>
   </div>
 
   <div id="toast" class="toast" hidden></div>
+  <script src="pages.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

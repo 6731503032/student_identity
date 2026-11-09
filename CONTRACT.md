@@ -54,7 +54,7 @@ POST /tokens/verify
 ```json
 { "valid": true, "sub": "6731503032", "role": "staff", "scopes": [], "expiresAt": "2026-11-07T15:00:00.000Z" }
 ```
-Invalid, tampered or expired → `200 { "valid": false }`. No auth needed.
+Invalid, tampered or expired → `200 { "valid": false }`; a suspended account → `200 { "valid": false, "reason": "suspended" }`. No auth needed.
 
 ---
 
@@ -177,3 +177,25 @@ Expected results (use these for the Catalog "unauthorised edit" test):
 For testing without passwords, Identity's dev-only `POST /dev/issue-token`
 (`{ "sub": "staff-1", "role": "staff" }`) mints a token. It is disabled when
 Identity runs with `NODE_ENV=production`.
+
+---
+
+## 6. Data Identity reads from Pod 1 teams
+
+Identity's student portal (Courses, Timetable, Grades, Register button, the
+"currently enrolled" line on the verify page) shows **your** data. Identity
+calls your API from its backend and sends the signed-in student's token as
+`Authorization: Bearer <token>` — check it with `POST /tokens/verify` as usual.
+Nothing is copied into Identity's database.
+
+Send us your base URL and we set it on Render. Default paths (tell us if yours differ):
+
+| Team | Request from Identity | We understand |
+|---|---|---|
+| Course Catalog (02) | `GET /courses?q=…` · `GET /courses/{code}` · `GET /courses/{code}/sections` | a list or `{ courses: [...] }`; per course `code`/`courseCode`, `title`/`name`, `credits`, `description`, `instructor`, `prerequisites` (codes or `{ code }`), `seatsLeft` or `capacity` + `enrolled`, optional `sections` |
+| Enrollment (03) | `POST /enrollments` `{ studentId, courseCode, section? }` | `2xx { status: "approved" \| "pending" \| "rejected", message? }`; a `4xx` with `{ error }` is shown to the student as a rejection |
+| Enrollment (03) | `GET /students/{studentId}/enrollments` | `{ enrolled: true/false }` or a list of enrollments |
+| Timetable & Room (04) | `GET /timetable/{studentId}` | a list of `{ courseCode, title?, day, start, end, room }` — `day` as `Mon`/`Monday`/`0–6`/a date |
+
+If your service is down or slow (> 20 s), students see "service unavailable —
+try again"; nothing breaks on our side.

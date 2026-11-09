@@ -25,6 +25,8 @@ function reset() {
     audit_events: [],
     roles: [],
     accounts: [],
+    announcements: [],
+    notifications: [],
   });
 }
 reset();

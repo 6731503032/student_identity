@@ -106,7 +106,8 @@ router.get('/students', authenticate, requireRole('staff', 'instructor'), async 
   try {
     const students = await studentsDb.listStudents();
     audit.record({ actor: req.user.sub, action: 'list_students', resource: '/students', result: 'allow' });
-    res.status(200).json(students);
+    // Photos are large; the list only says whether one exists.
+    res.status(200).json(students.map(({ photo, ...s }) => ({ ...s, hasPhoto: !!photo })));
   } catch (err) {
     res.status(500).json({ error: 'Failed to list students' });
   }
@@ -155,10 +156,14 @@ router.get('/students/:id/claims', authenticate, requireScope('profile:read'), a
 });
 
 // POST /tokens/verify — any service can check a token it was handed
-router.post('/tokens/verify', (req, res) => {
+router.post('/tokens/verify', async (req, res) => {
   const { token } = req.body || {};
+  let decoded;
+  try { decoded = verifyToken(token); } catch (err) { return res.status(200).json({ valid: false }); }
   try {
-    const decoded = verifyToken(token);
+    if (decoded.role !== 'service' && await require('../lib/portal').isSuspended(decoded.sub)) {
+      return res.status(200).json({ valid: false, reason: 'suspended' });
+    }
     res.status(200).json({
       valid: true, sub: decoded.sub, role: decoded.role, scopes: decoded.scopes || [],
       expiresAt: new Date(decoded.exp * 1000).toISOString(),
@@ -370,6 +375,7 @@ router.put('/roles/:subject', authenticate, requireRole('staff'), async (req, re
   }
   try {
     const row = await roles.set(subject, role, req.user.sub);
+    require('../lib/portal').notify(subject, 'role_changed', `Your role was changed to ${role} by ${req.user.sub}. Sign in again to use it.`);
     audit.record({ actor: req.user.sub, action: 'assign_role', resource: `/roles/${subject}`, result: `allow:${role}` });
     res.status(200).json({ subject: row.subject, role: row.role, source: 'assigned', updatedBy: row.updated_by, updatedAt: row.updated_at });
   } catch (err) {

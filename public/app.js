@@ -22,6 +22,7 @@ async function api(method, path, body, headers = {}) {
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   } catch (e) { data = { error: 'Network error — is the server running?' }; }
   if (status === 401 && session && path !== '/tokens/verify') { toast('Session expired — sign in again'); signOut(true); }
+  if (status === 403 && data?.code === 'suspended' && session) { toast('Your account is suspended — contact staff'); signOut(true); }
   return { ok: status >= 200 && status < 300, status, data };
 }
 
@@ -36,22 +37,27 @@ const errMsg = (r) => r.data?.error || r.data?.message || `HTTP ${r.status}`;
 function startSession(token) {
   const p = decode(token);
   saveSession({ token, sub: p.sub, role: p.role, scopes: p.scopes || [], exp: p.exp });
-  location.hash = '';
-  boot();
+  go('#/');
 }
 async function signOut(silent) {
   if (!silent && session) await api('DELETE', `/sessions/${encodeURIComponent(session.sub)}`);
   saveSession(null);
-  boot();
+  go('#/signin');
+}
+// Navigate and (re)build the page even if the hash doesn't change.
+function go(hash) {
+  shellReady = false;
+  if (location.hash === hash) boot(); else location.hash = hash;
 }
 
 // tabs
 const showTab = (name) => {
   document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('[data-pane]').forEach((f) => (f.hidden = f.dataset.pane !== name));
-  $(`[data-pane="${name}"] input`).focus();
+  const first = $(`[data-pane="${name}"] input`);
+  if (first) first.focus();
 };
-document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
+document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => (location.hash = `#/${b.dataset.tab}`)));
 
 const busy = (form, on) => { const b = form.querySelector('button[type=submit]'); b.disabled = on; };
 
@@ -71,7 +77,7 @@ $('#signinForm').onsubmit = async (e) => {
 $('#signupForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = e.target, err = f.querySelector('[data-err]');
-  const body = Object.fromEntries(['studentId', 'firstName', 'lastName', 'email', 'password'].map((k) => [k, f[k].value.trim()]));
+  const body = Object.fromEntries(['studentId', 'firstName', 'lastName', 'email', 'faculty', 'password'].map((k) => [k, f[k].value.trim()]));
   body.password = f.password.value;
   // client-side checks mirror the server; the server is still the authority
   const fields = {};
@@ -130,51 +136,145 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.usermenu')) 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !userMenu.hidden) { closeMenu(); userBtn.focus(); } });
 
 // ---------- routes ----------
-const ROUTES = {
-  profile:  { label: 'My profile',      roles: ['student'],               render: viewProfile, ifRecord: true, inMenu: true },
-  password: { label: 'Change password', roles: ['student'],               render: viewPassword, ifRecord: true, inMenu: true },
-  consent:  { label: 'Consent',         roles: ['student'],               render: viewConsent },
-  students: { label: 'Students',        roles: ['staff', 'instructor'],   render: viewStudents },
-  roles:    { label: 'Roles',           roles: ['staff', 'instructor'],   render: viewRoles },
-  clients:  { label: 'Service clients', roles: ['staff'],                 render: viewClients },
-  claims:   { label: 'Claims',          roles: ['service'],               render: viewClaims },
-  tools:    { label: 'Tools',           roles: ['student', 'staff', 'instructor', 'service'], render: viewTools },
+// Side menu: items without a group sit at the top; the rest are grouped.
+const GROUPS = {
+  student: { label: 'Student Menu', icon: 'cap' },
+  account: { label: 'My Account', icon: 'user' },
+  admin:   { label: 'Staff Menu', icon: 'admin' },
+  service: { label: 'Service Menu', icon: 'plug' },
+  dev:     { label: 'Developer', icon: 'wrench' },
 };
+const ROUTES = {
+  dashboard: { label: 'Dashboard',       icon: 'gauge',    roles: ['student'],                        render: viewDashboard },
+  admin:     { label: 'Dashboard',       icon: 'gauge',    roles: ['staff'],                          render: viewAdmin },
+  courses:   { label: 'Courses',         icon: 'book',     roles: ['student'], group: 'student',      render: viewCourses },
+  timetable: { label: 'Timetable',       icon: 'calendar', roles: ['student'], group: 'student',      render: viewTimetable },
+  grades:    { label: 'Grades',          icon: 'award',    roles: ['student'], group: 'student',      render: viewGrades },
+  profile:   { label: 'My profile',      icon: 'user',     roles: ['student'], group: 'account', ifRecord: true, inMenu: true, render: viewProfile },
+  consent:   { label: 'Consent & sharing', icon: 'shield', roles: ['student'], group: 'account',      render: viewConsent },
+  settings:  { label: 'Settings',        icon: 'gear',     roles: ['student'], group: 'account', ifRecord: true, inMenu: true, render: viewSettings },
+  users:     { label: 'Users',           icon: 'users',    roles: ['staff'], group: 'admin',          render: viewUsers },
+  students:  { label: 'Students',        icon: 'idcard',   roles: ['staff', 'instructor'], group: 'admin', render: viewStudents },
+  roles:     { label: 'Roles',           icon: 'key',      roles: ['staff', 'instructor'], group: 'admin', render: viewRoles },
+  synced:    { label: 'Course list',     icon: 'list',     roles: ['staff'], group: 'admin',          render: viewSynced },
+  clients:   { label: 'Service clients', icon: 'plug',     roles: ['staff'], group: 'admin',          render: viewClients },
+  audit:     { label: 'Audit log',       icon: 'scroll',   roles: ['staff'], group: 'admin',          render: viewAudit },
+  claims:    { label: 'Claims',          icon: 'file',     roles: ['service'], group: 'service',      render: viewClaims },
+  tools:     { label: 'Tools',           icon: 'wrench',   roles: ['staff', 'instructor', 'service'], group: 'dev', render: viewTools },
+};
+const ALIASES = { password: 'settings' };
+const PUBLIC_KEYS = ['', 'signin', 'signup', 'forgot'];
+
 // Staff/instructors who also have a student record (e.g. a student promoted on
-// the Roles screen) still get their own profile page.
-let hasRecord = false, booting = false;
+// the Roles screen) still get their own profile and settings.
+let hasRecord = false, booting = false, shellReady = false, me = null;
 const allowed = () => Object.entries(ROUTES).filter(([, r]) => r.roles.includes(session.role) || (r.ifRecord && hasRecord));
+const parseHash = () => { const [key = '', ...rest] = location.hash.replace(/^#\/?/, '').split('/'); return { key, param: rest.join('/') }; };
+
+function showPublic(which, param) {
+  shellReady = false;
+  $('#app').hidden = true;
+  $('#public').hidden = false;
+  $('#auth').hidden = which === 'verify';
+  $('#verifyView').hidden = which !== 'verify';
+  if (which === 'verify') renderVerify($('#verifyView'), param);
+  else showTab(which);
+  window.scrollTo(0, 0);
+}
+
+// Header: photo (or initials), student ID, name, role.
+function paintWho() {
+  const name = me ? [me.first_name, me.last_name].filter(Boolean).join(' ') : '';
+  $('#whoText').innerHTML = `<span class="who-id">${esc(session.sub)}</span>${name ? `<span class="who-name">${esc(name)}</span>` : ''}<span class="badge accent">${esc(session.role)}</span>`;
+  const initials = name ? name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('') : session.sub.slice(0, 2);
+  $('#whoAvatar').innerHTML = me && me.photo ? `<img src="${esc(me.photo)}" alt="">` : esc(initials.toUpperCase());
+}
 
 async function boot() {
   const authed = session && session.exp * 1000 > Date.now();
   if (!authed && session) saveSession(null);
-  $('#login').hidden = !!authed;
-  $('#app').hidden = !authed;
-  if (!authed) { showTab('signin'); return; }
-  $('#whoText').innerHTML = `<b>${esc(session.sub)}</b> <span class="badge accent">${esc(session.role)}</span>`;
-  hasRecord = false;
-  if (session.role === 'staff' || session.role === 'instructor') {
-    booting = true; // don't render a page until we know which tabs exist
-    try { hasRecord = (await api('GET', '/me')).ok; } finally { booting = false; }
+  const { key, param } = parseHash();
+  if (key === 'v') return showPublic('verify', param); // public QR page, signed in or not
+  if (!authed) return showPublic(['signin', 'signup', 'forgot'].includes(key) ? key : 'signin');
+  $('#public').hidden = true;
+  $('#app').hidden = false;
+  me = null; hasRecord = false;
+  paintWho();
+  if (session.role !== 'service') {
+    booting = true; // don't render a page until we know which menu items exist
+    $('#view').innerHTML = skeleton(4);
+    try { const r = await api('GET', '/me'); if (r.ok) { me = r.data; hasRecord = true; } } finally { booting = false; }
+    if (!session) return; // signed out while loading (e.g. suspended)
+    paintWho();
   }
   const own = session.role === 'student' || hasRecord;
   userMenu.querySelectorAll('[data-needs="record"]').forEach((a) => (a.hidden = !own));
+  shellReady = true;
   route();
 }
+
+function homeKey(list) {
+  const has = (k) => list.some(([x]) => x === k);
+  return has('dashboard') ? 'dashboard' : has('admin') ? 'admin' : (list.find(([, r]) => !r.inMenu) || list[0])[0];
+}
+
+// collapsed side-menu groups survive reloads (per browser)
+let collapsed = {};
+try { collapsed = JSON.parse(localStorage.getItem('si_nav_collapsed')) || {}; } catch {}
+const saveCollapsed = () => { try { localStorage.setItem('si_nav_collapsed', JSON.stringify(collapsed)); } catch {} };
+
+function renderNav(list, key) {
+  const item = ([k, r]) => `<a class="nav-item ${k === key ? 'active' : ''}" href="#/${k}" ${k === key ? 'aria-current="page"' : ''}>
+    <span class="nav-ic">${icon(r.icon)}</span>${esc(r.label)}</a>`;
+  const top = list.filter(([, r]) => !r.group).map(item).join('');
+  const groups = [...new Set(list.filter(([, r]) => r.group).map(([, r]) => r.group))].map((g) => {
+    const items = list.filter(([, r]) => r.group === g);
+    const open = !collapsed[g] || items.some(([k]) => k === key);
+    return `<div class="nav-group"><button type="button" class="nav-head" data-g="${g}" aria-expanded="${open}">
+      <span class="nav-ic">${icon(GROUPS[g].icon)}</span>${esc(GROUPS[g].label)}
+      <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+      <div class="nav-items" ${open ? '' : 'hidden'}>${items.map(item).join('')}</div></div>`;
+  }).join('');
+  $('#nav').innerHTML = top + groups;
+}
+$('#nav').onclick = (e) => {
+  const head = e.target.closest('.nav-head');
+  if (head) {
+    const open = head.getAttribute('aria-expanded') !== 'true';
+    head.setAttribute('aria-expanded', String(open));
+    head.nextElementSibling.hidden = !open;
+    collapsed[head.dataset.g] = !open; saveCollapsed();
+  } else if (e.target.closest('a')) closeSide();
+};
+
+// mobile: side menu slides in
+function closeSide() { $('#side').classList.remove('open'); $('#scrim').hidden = true; $('#navToggle').setAttribute('aria-expanded', 'false'); }
+$('#navToggle').onclick = () => {
+  const open = !$('#side').classList.contains('open');
+  $('#side').classList.toggle('open', open); $('#scrim').hidden = !open; $('#navToggle').setAttribute('aria-expanded', String(open));
+};
+$('#scrim').onclick = closeSide;
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSide(); });
 
 function route() {
   if (!session || booting) return;
   const list = allowed();
-  const home = list.some(([k]) => k === 'profile') ? 'profile' : list.find(([, r]) => !r.inMenu)[0];
-  let key = location.hash.slice(2) || home;
-  if (!list.some(([k]) => k === key)) key = home;
-  // Profile and password live in the user menu, not the top nav.
-  $('#nav').innerHTML = list.filter(([, r]) => !r.inMenu)
-    .map(([k, r]) => `<a href="#/${k}" class="${k === key ? 'active' : ''}">${r.label}</a>`).join('');
+  let { key, param } = parseHash();
+  key = ALIASES[key] || key;
+  if (PUBLIC_KEYS.includes(key)) key = homeKey(list);
+  renderNav(list, key);
+  closeSide();
   userMenu.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#/${key}`));
-  ROUTES[key].render($('#view'));
+  const view = $('#view');
+  window.scrollTo(0, 0);
+  if (!ROUTES[key]) return viewNotFound(view);
+  if (!list.some(([k]) => k === key)) return viewForbidden(view);
+  ROUTES[key].render(view, param);
 }
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => {
+  const { key } = parseHash();
+  if (key === 'v' || !session || !shellReady) boot(); else route();
+});
 
 setInterval(() => {
   if (!session) return;
@@ -187,115 +287,6 @@ setInterval(() => {
 }, 1000);
 
 // ---------- views ----------
-// Only the fields a student fills in at sign-up are shown and edited here.
-const EDITABLE = [['first_name', 'First name'], ['last_name', 'Last name'], ['email', 'Email', 'email']];
-
-async function viewProfile(el) {
-  el.innerHTML = `<div id="pf"><div class="card">Loading…</div></div>
-    <div class="card" style="margin-top:16px"><h3>Profile completeness <span id="src"></span></h3><div id="pc">Loading…</div></div>`;
-
-  const r = await api('GET', '/me');
-  if (!r.ok) {
-    $('#pf').innerHTML = `<div class="card"><p class="err">${esc(errMsg(r))}</p><p class="sub" style="margin:0">No student record for <code>${esc(session.sub)}</code>. Ask staff to create it.</p></div>`;
-    $('#pc').innerHTML = '<p class="sub">—</p>';
-    return;
-  }
-  renderView(r.data);
-  loadCompleteness();
-
-  function renderView(s) {
-    const name = [s.first_name, s.last_name].filter(Boolean).join(' ');
-    const initials = ((s.first_name || '?')[0] + (s.last_name || '')[0] || '').toUpperCase();
-    const v = (x) => (x ? esc(x) : '<span class="sub">—</span>');
-    $('#pf').innerHTML = `
-      <div class="card pf-head">
-        <div class="avatar" aria-hidden="true">${esc(initials)}</div>
-        <div class="pf-main">
-          <h2 class="pf-title"><span class="mono">${esc(s.student_id)}</span> : <span class="pf-name">${v(name)}</span></h2>
-          <div class="pf-line"><span>Email :</span> ${v(s.email)}</div>
-        </div>
-        <button class="btn sm" id="editBtn">Edit</button>
-      </div>
-      <p class="sub pf-note">If your information is incorrect, edit it here or contact staff.</p>
-      <div class="card pf-section">
-        <div class="pf-section-head">Personal Information</div>
-        <dl class="pf-grid">
-          <div><dt>Student Code</dt><dd class="mono">${esc(s.student_id)}</dd></div>
-          <div><dt>Email</dt><dd>${v(s.email)}</dd></div>
-          <div><dt>First Name</dt><dd>${v(s.first_name)}</dd></div>
-          <div><dt>Last Name</dt><dd>${v(s.last_name)}</dd></div>
-        </dl>
-      </div>`;
-    $('#editBtn').onclick = () => renderForm(s);
-  }
-
-  function renderForm(s) {
-    $('#pf').innerHTML = `<div class="card"><h3>Edit profile</h3><form id="meForm">
-      <label>Student Code <input value="${esc(s.student_id)}" readonly></label>
-      <div class="row">${EDITABLE.slice(0, 2).map(field).join('')}</div>
-      ${field(EDITABLE[2])}
-      <div class="row"><button class="btn primary" type="submit">Save changes</button><button class="btn" type="button" id="cancelEdit">Cancel</button></div>
-      <p class="err" id="meErr"></p></form>
-      <p class="sub" style="margin:0">Saving sends a <code>profile.updated</code> webhook (email is not shared).</p></div>`;
-    function field([k, label, type = 'text']) {
-      return `<label>${label}<input name="${k}" type="${type}" value="${esc(s[k])}"></label>`;
-    }
-    $('#cancelEdit').onclick = () => renderView(s);
-    $('#meForm').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = e.target, body = {};
-      EDITABLE.forEach(([k]) => {
-        const val = f[k].value.trim();
-        if (String(s[k] ?? '') !== val) body[k] = val;
-      });
-      if (!Object.keys(body).length) return renderView(s);
-      const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
-      const u = await api('PATCH', '/me', body);
-      btn.disabled = false;
-      if (!u.ok) {
-        const fe = u.data?.fields || {};
-        const labels = Object.fromEntries(EDITABLE.map(([k, l]) => [k, l]));
-        return ($('#meErr').textContent = Object.keys(fe).length
-          ? Object.entries(fe).map(([k, m]) => `${labels[k] || k}: ${m}`).join(' · ')
-          : errMsg(u));
-      }
-      const { _webhookDebug, ...student } = u.data;
-      toast('Profile saved');
-      renderView(student);
-      loadCompleteness();
-    };
-  }
-}
-
-function viewPassword(el) {
-  el.innerHTML = `<div class="card narrow"><h2>Change password</h2><p class="sub">Use at least 8 characters. You'll stay signed in.</p>
-    <form id="pwForm" novalidate>
-      <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required><small class="ferr" data-f="currentPassword"></small></label>
-      <label>New password<input name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small class="ferr" data-f="newPassword"></small></label>
-      <label>Confirm new password<input name="confirm" type="password" autocomplete="new-password" required><small class="ferr" data-f="confirm"></small></label>
-      <div class="row"><button class="btn primary" type="submit">Change password</button><a class="btn" href="#/profile">Cancel</a></div>
-      <p class="err" data-err></p>
-    </form></div>`;
-  const f = $('#pwForm');
-  f.currentPassword.focus();
-  f.onsubmit = async (e) => {
-    e.preventDefault();
-    const fields = {};
-    if (!f.currentPassword.value) fields.currentPassword = 'Required';
-    if (f.newPassword.value.length < 8) fields.newPassword = 'At least 8 characters';
-    else if (f.newPassword.value === f.currentPassword.value) fields.newPassword = 'Must be different from the current password';
-    if (f.confirm.value !== f.newPassword.value) fields.confirm = 'Passwords do not match';
-    showFieldErrors(f, fields);
-    if (Object.keys(fields).length) return;
-    busy(f, true);
-    const r = await api('POST', '/auth/change-password', { currentPassword: f.currentPassword.value, newPassword: f.newPassword.value });
-    busy(f, false);
-    if (!r.ok) { showFieldErrors(f, r.data?.fields || {}); return (f.querySelector('[data-err]').textContent = r.data?.fields ? '' : errMsg(r)); }
-    f.reset(); toast('Password changed');
-    location.hash = '#/profile';
-  };
-}
-
 async function loadCompleteness() {
   const c = await api('GET', '/me/profile-completeness');
   if (!c.ok) return ($('#pc').innerHTML = `<p class="err">${esc(errMsg(c))}</p>`);
