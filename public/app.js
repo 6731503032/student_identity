@@ -137,12 +137,11 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !userMen
 
 // ---------- routes ----------
 // Side menu: items without a group sit at the top; the rest are grouped.
+// inMenu pages (profile, settings) are only in the top-right user menu.
 const GROUPS = {
   student: { label: 'Student Menu', icon: 'cap' },
-  account: { label: 'My Account', icon: 'user' },
   admin:   { label: 'Staff Menu', icon: 'admin' },
   service: { label: 'Service Menu', icon: 'plug' },
-  dev:     { label: 'Developer', icon: 'wrench' },
 };
 const ROUTES = {
   dashboard: { label: 'Dashboard',       icon: 'gauge',    roles: ['student'],                        render: viewDashboard },
@@ -150,9 +149,9 @@ const ROUTES = {
   courses:   { label: 'Courses',         icon: 'book',     roles: ['student'], group: 'student',      render: viewCourses },
   timetable: { label: 'Timetable',       icon: 'calendar', roles: ['student'], group: 'student',      render: viewTimetable },
   grades:    { label: 'Grades',          icon: 'award',    roles: ['student'], group: 'student',      render: viewGrades },
-  profile:   { label: 'My profile',      icon: 'user',     roles: ['student'], group: 'account', ifRecord: true, inMenu: true, render: viewProfile },
-  consent:   { label: 'Consent & sharing', icon: 'shield', roles: ['student'], group: 'account',      render: viewConsent },
-  settings:  { label: 'Settings',        icon: 'gear',     roles: ['student'], group: 'account', ifRecord: true, inMenu: true, render: viewSettings },
+  profile:   { label: 'My profile',      icon: 'user',     roles: ['student'], ifRecord: true, inMenu: true, render: viewProfile },
+  consent:   { label: 'Consent & sharing', icon: 'shield', roles: ['student'], group: 'student',      render: viewConsent },
+  settings:  { label: 'Settings',        icon: 'gear',     roles: ['student'], ifRecord: true, inMenu: true, render: viewSettings },
   users:     { label: 'Users',           icon: 'users',    roles: ['staff'], group: 'admin',          render: viewUsers },
   students:  { label: 'Students',        icon: 'idcard',   roles: ['staff', 'instructor'], group: 'admin', render: viewStudents },
   roles:     { label: 'Roles',           icon: 'key',      roles: ['staff', 'instructor'], group: 'admin', render: viewRoles },
@@ -160,7 +159,6 @@ const ROUTES = {
   clients:   { label: 'Service clients', icon: 'plug',     roles: ['staff'], group: 'admin',          render: viewClients },
   audit:     { label: 'Audit log',       icon: 'scroll',   roles: ['staff'], group: 'admin',          render: viewAudit },
   claims:    { label: 'Claims',          icon: 'file',     roles: ['service'], group: 'service',      render: viewClaims },
-  tools:     { label: 'Tools',           icon: 'wrench',   roles: ['staff', 'instructor', 'service'], group: 'dev', render: viewTools },
 };
 const ALIASES = { password: 'settings' };
 const PUBLIC_KEYS = ['', 'signin', 'signup', 'forgot'];
@@ -223,7 +221,8 @@ let collapsed = {};
 try { collapsed = JSON.parse(localStorage.getItem('si_nav_collapsed')) || {}; } catch {}
 const saveCollapsed = () => { try { localStorage.setItem('si_nav_collapsed', JSON.stringify(collapsed)); } catch {} };
 
-function renderNav(list, key) {
+function renderNav(all, key) {
+  const list = all.filter(([, r]) => !r.inMenu);
   const item = ([k, r]) => `<a class="nav-item ${k === key ? 'active' : ''}" href="#/${k}" ${k === key ? 'aria-current="page"' : ''}>
     <span class="nav-ic">${icon(r.icon)}</span>${esc(r.label)}</a>`;
   const top = list.filter(([, r]) => !r.group).map(item).join('');
@@ -557,35 +556,6 @@ async function viewRoles(el) {
   $('#q').oninput = draw; $('#rf').onchange = draw; $('#reload').onclick = load;
   $('#tbl').onclick = (e) => e.target.dataset.lk && lookup(e.target.dataset.lk);
   load();
-}
-
-function viewTools(el) {
-  el.innerHTML = `<h2>Tools</h2><p class="sub">Token verification and dev-only switches for evidence capture.</p>
-    <div class="grid">
-      <div class="card"><h3>Verify a token</h3>
-        <form id="tvForm"><label>JWT<input name="t" placeholder="eyJ…" class="mono"></label>
-          <div class="row"><button class="btn" type="button" id="useMine">Use my token</button><button class="btn primary" type="submit">Verify</button></div></form>
-        <div id="tvOut"></div></div>
-      <div class="card"><h3>AI dependency <span class="badge">dev</span></h3>
-        <p class="sub" style="margin-bottom:12px">Simulate an outage of the AI suggestion service. Profile completeness falls back to the checklist.</p>
-        <div class="row"><button class="btn danger" id="brk">Break AI</button><button class="btn" id="fix">Fix AI</button></div>
-        <div id="aiOut"></div></div>
-    </div>`;
-  const f = $('#tvForm');
-  $('#useMine').onclick = () => (f.t.value = session.token);
-  f.onsubmit = async (e) => {
-    e.preventDefault();
-    const r = await api('POST', '/tokens/verify', { token: f.t.value.trim() });
-    $('#tvOut').innerHTML = r.data?.valid
-      ? `<p style="margin-top:16px"><span class="badge ok">Valid</span></p><dl class="kv"><dt>sub</dt><dd>${esc(r.data.sub)}</dd><dt>role</dt><dd>${esc(r.data.role)}</dd><dt>scopes</dt><dd>${esc(r.data.scopes.join(', ') || '—')}</dd></dl>`
-      : `<p style="margin-top:16px"><span class="badge bad">Invalid or expired</span></p>`;
-  };
-  const ai = async (path) => {
-    const r = await api('POST', path);
-    $('#aiOut').innerHTML = r.ok ? `<p style="margin-top:12px">${r.data.broken ? '<span class="badge bad">AI down</span>' : '<span class="badge ok">AI up</span>'} <span class="mono">${esc(r.data.timestamp)}</span></p>` : `<p class="err">${esc(errMsg(r))}</p>`;
-  };
-  $('#brk').onclick = () => ai('/dev/break-ai');
-  $('#fix').onclick = () => ai('/dev/fix-ai');
 }
 
 boot();

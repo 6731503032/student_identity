@@ -27,18 +27,22 @@ Digital Campus service (Pod 1: Identity & Academic Core).
 | Public | **Sign in / Create account** (opens at `/`) · **Forgot password** (staff reset — no email yet) · **Verify** (`#/v/<code>`, opened from the QR; shows only Valid / Currently enrolled) · Dev shortcuts |
 | Student | **Dashboard** (verification, QR, today's classes, announcements, alerts) · **Courses** ★ (search, filter, detail, Register) · **Timetable** ★ · **Grades** ★ (GPA, CSV transcript, print) · **Consent** |
 | Anyone with a student record | User menu: **My profile** (photo, faculty, edit, completeness) · **Settings** (password, privacy, alert preferences) · Sign out |
-| Staff | **Dashboard** (counts, connected services, announcements) · **Users** (search, suspend/reactivate, reset password) · Students · Roles · **Courses** ★ (read-only synced view) · Service clients · **Audit log** (filter who did what) · Tools |
-| Instructor | Students (read-only) · Roles (read-only) · Tools |
-| Service | Claims lookup · Tools |
+| Staff | **Dashboard** (counts, connected services, announcements) · **Users** (search, suspend/reactivate, reset password) · Students · Roles · **Courses** ★ (read-only synced view) · Service clients · **Audit log** (filter who did what) |
+| Instructor | Students (read-only) · Roles (read-only) |
+| Service | Claims lookup |
 
 Layout: a header (student ID, name, photo, user menu) and a **side menu** grouped into
-Student Menu / My Account / Staff Menu / Developer; groups collapse, and on phones the
+Student Menu / Staff Menu / Service Menu (My profile and Settings are in the user menu); groups collapse, and on phones the
 menu slides in from the hamburger button.
 
 ★ = data owned by another team, fetched through our backend adapters (`lib/external.js`) — see
 [Pages that use other teams' data](#pages-that-use-other-teams-data).
 Every page has loading, empty and error states, plus 404 (unknown page) and 403 (wrong role).
-Tools: verify a token, and break/fix the AI dependency to demonstrate the fallback.
+**Demo the AI fallback** (no UI button — dev routes only):
+```bash
+curl -X POST https://student-identity.onrender.com/dev/break-ai   # completeness card shows "Fallback"
+curl -X POST https://student-identity.onrender.com/dev/fix-ai     # back to "AI"
+```
 
 > **Scope note.** The PRD asks for 3 screens. The portal pages above were added on the
 > team's request (2026-11-09). Courses / Timetable / Grades / Synced courses depend on
@@ -187,7 +191,7 @@ Path overrides: `COURSE_CATALOG_COURSES_PATH`, `COURSE_CATALOG_COURSE_PATH`,
 - **Webhook** — `lib/webhooks.js` posts `profile.updated` to both targets in
   parallel after every `PATCH /me`, with `email` removed.
 - **AI + fallback** — `lib/completeness.js`. The AI message is currently
-  **simulated**; when it is unavailable (or broken via Tools) the response comes
+  **simulated**; when it is unavailable (or broken with `POST /dev/break-ai`) the response comes
   from a deterministic checklist of `first_name`, `last_name`, `email`.
 - **Audit** — every allow and deny (sign-in, role, consent, claims, key copy,
   webhook delivery) is written to `audit_events` with actor, resource and result.
