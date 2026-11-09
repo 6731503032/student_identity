@@ -29,7 +29,8 @@ before(async () => {
         ];
         if (u.pathname === '/t2/v1/courses') { mock.lastLimit = u.searchParams.get('limit'); return send(200, { data: t2, page: 1, limit: 100, total: 2 }); }
         if (u.pathname === '/t2/v1/courses/crs_01') return send(200, { ...t2[0], instructors: [{ id: 'ins_1', displayName: 'Dr. Lee' }], prerequisites: [{ courseId: 'crs_02', required: true, minimumGrade: 60 }] });
-        return send(404, { error: 'not found' });
+        // Team 02 rejects non-crs_ ids with 400 and a nested error object
+        return send(400, { error: { code: 'validation_error', message: 'Must be a crs_ prefixed course ID.' } });
       }
       if (u.pathname === '/courses') {
         return send(200, { courses: [
