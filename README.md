@@ -74,6 +74,7 @@ npm test               # no Supabase or internet needed
 | `ENROLLMENT_URL` | no | Enrollment base URL (register, "currently enrolled" on the verify page) |
 | `TIMETABLE_URL` | no | Timetable & Room base URL |
 | `GRADES_URL` | no | Grades service base URL |
+| `COURSE_CATALOG_TOKEN`, `ENROLLMENT_TOKEN`, `TIMETABLE_TOKEN`, `GRADES_TOKEN` | no | Service token issued **by that team**, if their API uses its own JWTs. Sent instead of the user's Identity token (server-side only) |
 | `PUBLIC_URL` | no | Base URL put in verify QR codes. Default: the request's host |
 | `PORT` | no | Default `3000` (Render sets it) |
 | `NODE_ENV` | no | `production` **disables** dev routes (`/dev/*`, including `/dev/issue-token` and break/fix AI) |
@@ -157,11 +158,18 @@ Other teams' backends send `X-API-Key: sik_…` (issued on the Service clients s
 - reads the base URLs above (unset = "not connected yet");
 - forwards the signed-in user's Identity token as `Authorization: Bearer`, so
   their service can check it with `POST /tokens/verify`;
+  — or, when `<TEAM>_TOKEN` is set, sends that team-issued service token instead;
+- for Course Catalog, resolves a course code to the team's internal id (`crs_…`)
+  when their detail endpoint is id-based, requests `limit=100`, and hides
+  non-`published` courses from students (staff see all with a status badge);
 - accepts the common response shapes (`[...]`, `{ courses: [...] }`,
   `courseCode`/`code`, `name`/`title`, `seatsLeft` or `capacity - enrolled`, …) and
   normalises them;
 - times out after 20 s and turns errors into `503`, which the UI shows as
   "… unavailable — try again".
+
+**Team 02 (Course Catalog) setup:** `COURSE_CATALOG_URL=https://course-catalog.taskflow-123.workers.dev/v1`
+and `COURSE_CATALOG_TOKEN=<service token from Team 02>` (their API rejects other tokens).
 
 | Page | Calls (default paths, override with env) |
 |---|---|

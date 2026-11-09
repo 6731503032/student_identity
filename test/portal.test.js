@@ -20,6 +20,17 @@ before(async () => {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       const u = new URL(req.url, 'http://x');
+      // Shape of Team 02's real API (/v1, own JWT, {data,page,limit,total}, detail by crs_ id)
+      if (u.pathname.startsWith('/t2/v1/')) {
+        if (req.headers.authorization !== 'Bearer catalog-service-token') return send(401, { error: 'unauthorized' });
+        const t2 = [
+          { id: 'crs_01', code: 'CS-101', title: 'Intro to CS', description: 'Basics', status: 'published', credits: 3, level: 'introductory', department: 'Computing', instructorIds: ['ins_1'] },
+          { id: 'crs_02', code: 'CS-201', title: 'Data Structures', description: '', status: 'draft', credits: 3, level: 'intermediate', department: 'Computing', instructorIds: [] },
+        ];
+        if (u.pathname === '/t2/v1/courses') { mock.lastLimit = u.searchParams.get('limit'); return send(200, { data: t2, page: 1, limit: 100, total: 2 }); }
+        if (u.pathname === '/t2/v1/courses/crs_01') return send(200, { ...t2[0], instructors: [{ id: 'ins_1', name: 'Dr. Lee' }], prerequisites: [{ courseId: 'crs_00', code: 'MA-100' }] });
+        return send(404, { error: 'not found' });
+      }
       if (u.pathname === '/courses') {
         return send(200, { courses: [
           { courseCode: 'SE101', name: 'Intro to SE', credits: 3, capacity: 40, enrolled: 38, prerequisites: [{ code: 'CS100' }], instructor: { name: 'Dr. A' } },
@@ -183,6 +194,28 @@ describe('external adapters', () => {
     assert.equal(g.body.terms[1].gpa, 2, 'S/U grades are not counted');
     assert.equal(g.body.cumulative.gpa, 3.17);
     assert.equal(g.body.cumulative.credits, 9);
+  });
+});
+
+describe('Team 02 course catalog shape', () => {
+  test('service token, /v1 base, paging, code→id lookup, drafts hidden from students', async () => {
+    process.env.COURSE_CATALOG_URL = `${mockUrl}/t2/v1`;
+    const t = token(STUDENT, 'student');
+    const noToken = await api('GET', '/catalog/courses', { token: t });
+    assert.deepEqual([noToken.status, noToken.body.code], [502, 'service_auth_failed'], 'their API rejects our user token → "access not set up"');
+    process.env.COURSE_CATALOG_TOKEN = 'catalog-service-token';
+    try {
+      const list = await api('GET', '/catalog/courses', { token: t });
+      assert.equal(list.status, 200);
+      assert.equal(mock.lastLimit, '100');
+      assert.deepEqual(list.body.courses.map((c) => c.code), ['CS-101'], 'draft CS-201 hidden from students');
+      const staffView = await api('GET', '/admin/courses', { token: staff() });
+      assert.deepEqual(staffView.body.courses.map((c) => [c.code, c.status, c.faculty]), [['CS-101', 'published', 'Computing'], ['CS-201', 'draft', 'Computing']]);
+      const d = await api('GET', '/catalog/courses/CS-101', { token: t });
+      assert.equal(d.status, 200, 'looked up by code even though their detail path uses crs_ ids');
+      assert.deepEqual([d.body.course.instructor, d.body.course.prerequisites, d.body.course.level], ['Dr. Lee', ['MA-100'], 'introductory']);
+      assert.equal((await api('GET', '/catalog/courses/CS-999', { token: t })).status, 404);
+    } finally { delete process.env.COURSE_CATALOG_TOKEN; }
   });
 });
 

@@ -43,9 +43,12 @@ router.get('/integrations', authenticate, (req, res) => res.json(ext.status()));
 // ---------------------------------------------------------------------------
 // Courses (Course Catalog, Team 02) and registration (Enrollment, Team 03)
 // ---------------------------------------------------------------------------
+// Students only see published courses; drafts/archived stay on the staff view.
+const isPublic = (c) => !c.status || c.status === 'published';
+
 router.get('/catalog/courses', authenticate, async (req, res) => {
   try {
-    const courses = await ext.listCourses({ q: req.query.q, token: bearer(req) });
+    const courses = (await ext.listCourses({ q: req.query.q, token: bearer(req) })).filter(isPublic);
     res.json({ source: ext.status().catalog.name, fetchedAt: new Date().toISOString(), courses });
   } catch (err) { sendExternal(res, err, 'Failed to load courses'); }
 });
@@ -53,6 +56,7 @@ router.get('/catalog/courses', authenticate, async (req, res) => {
 router.get('/catalog/courses/:code', authenticate, async (req, res) => {
   try {
     const course = await ext.getCourse(req.params.code, { token: bearer(req) });
+    if (!isPublic(course)) return res.status(404).json({ error: 'Course not found', code: 'not_published' });
     res.json({ source: ext.status().catalog.name, course });
   } catch (err) { sendExternal(res, err, 'Failed to load course'); }
 });

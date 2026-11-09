@@ -46,6 +46,10 @@ function unavailable(r, what = 'Course service') {
     return emptyState(`${what} not connected yet`,
       `This page shows data from <b>${esc(name)}</b>. It will appear here as soon as that service is connected.`, '', 'plug');
   }
+  if (r.data?.code === 'service_auth_failed') {
+    return emptyState(`${what} access not set up`,
+      `<b>${esc(name)}</b> didn't accept our credentials. Staff need to add the service token that team issued (e.g. <code>COURSE_CATALOG_TOKEN</code>) on the server.`, '', 'lock');
+  }
   if (r.status === 503) {
     return emptyState(`${what} unavailable`,
       `We couldn't reach <b>${esc(name)}</b>. It may be waking up — try again in a moment.`,
@@ -330,7 +334,7 @@ async function viewCourseDetail(el, code) {
   const full = c.seatsLeft === 0;
   $('#cd').innerHTML = `<div class="row" style="justify-content:space-between;align-items:flex-start">
       <div><span class="mono code">${esc(c.code)}</span><h2 style="margin:4px 0 6px">${esc(c.title)}</h2>
-      <p class="sub" style="margin:0">${[c.credits !== null ? `${c.credits} credits` : '', c.instructor, c.faculty].filter(Boolean).map(esc).join(' · ')}</p></div>
+      <p class="sub" style="margin:0">${[c.credits !== null ? `${c.credits} credits` : '', c.level, c.instructor, c.faculty].filter(Boolean).map(esc).join(' · ')}</p></div>
       ${seatBadge(c.seatsLeft)}</div>
     ${c.description ? `<p style="margin:16px 0 0;max-width:70ch">${esc(c.description)}</p>` : ''}
     <h3 style="margin-top:20px">Prerequisites</h3>
@@ -565,8 +569,10 @@ async function viewSynced(el) {
     $('#syncAt').textContent = `${r.data.courses.length} courses · last synced ${fmtDate(r.data.fetchedAt)}`;
     $('#ssrc').innerHTML = sourceLabel(r.data.source);
     $('#st').innerHTML = !r.data.courses.length ? emptyState('No courses yet', 'Course Catalog hasn\'t published any courses.') : `<table>
-      <thead><tr><th>Code</th><th>Title</th><th>Credits</th><th>Instructor</th><th>Prerequisites</th><th>Seats left</th></tr></thead>
-      <tbody>${r.data.courses.map((c) => `<tr><td class="mono">${esc(c.code)}</td><td>${esc(c.title)}</td><td>${c.credits ?? '—'}</td><td>${esc(c.instructor || '—')}</td>
+      <thead><tr><th>Code</th><th>Title</th><th>Status</th><th>Credits</th><th>Department</th><th>Prerequisites</th><th>Seats left</th></tr></thead>
+      <tbody>${r.data.courses.map((c) => `<tr><td class="mono">${esc(c.code)}</td><td>${esc(c.title)}</td>
+        <td>${c.status ? `<span class="badge ${c.status === 'published' ? 'ok' : c.status === 'draft' ? 'warn' : ''}">${esc(c.status)}</span>` : '—'}</td>
+        <td>${c.credits ?? '—'}</td><td>${esc(c.faculty || '—')}</td>
         <td class="mono">${esc(c.prerequisites.join(', ') || '—')}</td><td>${c.seatsLeft ?? '—'}</td></tr>`).join('')}</tbody></table>`;
   };
   $('#sr').onclick = load;
