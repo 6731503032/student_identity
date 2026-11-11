@@ -59,6 +59,7 @@ const showTab = (name) => {
 };
 document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => (location.hash = `#/${b.dataset.tab}`)));
 
+const LAMDUAN = /^[^\s@]+@lamduan\.mfu\.ac\.th$/;
 const busy = (form, on) => { const b = form.querySelector('button[type=submit]'); b.disabled = on; };
 
 $('#signinForm').onsubmit = async (e) => {
@@ -84,7 +85,7 @@ $('#signupForm').onsubmit = async (e) => {
   if (!/^\d{10}$/.test(body.studentId)) fields.studentId = 'Student ID must be 10 digits';
   if (!body.firstName) fields.firstName = 'Required';
   if (!body.lastName) fields.lastName = 'Required';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) fields.email = 'Enter a valid email address';
+  if (!LAMDUAN.test(body.email.toLowerCase())) fields.email = 'Use your @lamduan.mfu.ac.th email';
   if (body.password.length < 8) fields.password = 'At least 8 characters';
   if (f.confirm.value !== body.password) fields.confirm = 'Passwords do not match';
   showFieldErrors(f, fields);

@@ -14,8 +14,9 @@ const { authenticate } = require('../middleware/auth');
  * role assigned on the Role lookup screen takes effect at the next sign-in.
  */
 
+const { isLamduanEmail, EMAIL_ERROR } = require('../lib/profileValidation');
+
 const STUDENT_ID = /^\d{10}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8;
 
 async function tokenFor(subject) {
@@ -38,7 +39,7 @@ router.post('/auth/signup', async (req, res) => {
   if (!STUDENT_ID.test(studentId)) errors.studentId = 'Student ID must be 10 digits';
   if (!firstName || firstName.length > 100) errors.firstName = 'First name is required';
   if (!lastName || lastName.length > 100) errors.lastName = 'Last name is required';
-  if (!EMAIL.test(email)) errors.email = 'Enter a valid email address';
+  if (!isLamduanEmail(email)) errors.email = EMAIL_ERROR;
   if (password.length < MIN_PASSWORD) errors.password = `Password must be at least ${MIN_PASSWORD} characters`;
   if (faculty.length > 120) errors.faculty = 'Faculty must be at most 120 characters';
   if (Object.keys(errors).length) {

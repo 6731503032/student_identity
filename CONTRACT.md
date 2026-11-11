@@ -41,7 +41,7 @@ POST /auth/login
 `200 { "token": "eyJ…", "role": "staff", "expiresIn": 900 }` · `401` wrong credentials
 
 New students use `POST /auth/signup` (`studentId`, `firstName`, `lastName`,
-`email`, `password`). The role in the token comes from Identity's role table,
+`email`, `password`). Sign-up only accepts an `@lamduan.mfu.ac.th` email. The role in the token comes from Identity's role table,
 so staff can promote a user on the Role lookup screen; it applies at their
 next sign-in.
 

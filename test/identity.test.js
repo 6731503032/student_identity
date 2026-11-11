@@ -37,9 +37,21 @@ describe('1. sign-in', () => {
     assert.equal((await api('POST', '/auth/login', { body: { studentId: '6731503029', password: 'newsecret1' } })).status, 200);
 
     const dup = await api('POST', '/auth/signup', {
-      body: { studentId: '6731503029', firstName: 'X', lastName: 'Y', email: 'x@y.com', password: 'secret123' },
+      body: { studentId: '6731503029', firstName: 'X', lastName: 'Y', email: 'other@lamduan.mfu.ac.th', password: 'secret123' },
     });
     assert.equal(dup.status, 409);
+  });
+});
+
+describe('1b. lamduan email at sign-up', () => {
+  test('sign-up refuses non-lamduan email; sign-in still uses student ID', async () => {
+    const base = { studentId: '6731503029', firstName: 'Bee', lastName: 'Test', password: 'secret123' };
+    const gmail = await api('POST', '/auth/signup', { body: { ...base, email: 'bee@gmail.com' } });
+    assert.equal(gmail.status, 400);
+    assert.match(gmail.body.fields.email, /lamduan/);
+    assert.equal((await api('POST', '/auth/signup', { body: { ...base, email: 'bee@lamduan.mfu.ac.th.evil.com' } })).status, 400);
+    assert.equal((await api('POST', '/auth/signup', { body: { ...base, email: 'Bee@Lamduan.MFU.ac.th' } })).status, 201, 'case does not matter');
+    assert.equal((await api('POST', '/auth/login', { body: { studentId: '6731503029', password: 'secret123' } })).status, 200);
   });
 });
 
